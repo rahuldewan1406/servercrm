@@ -1,0 +1,105 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, Arial, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #f5f7fb;
+  color: #1d2433;
+}
+
+header {
+  background: #1f3a8a;
+  color: #fff;
+  padding: 1.5rem;
+}
+
+header h1 {
+  margin: 0;
+}
+
+main {
+  max-width: 1000px;
+  margin: 1.5rem auto;
+  display: grid;
+  gap: 1rem;
+  padding: 0 1rem 2rem;
+}
+
+.card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 1rem;
+  box-shadow: 0 2px 8px rgba(24, 39, 75, 0.08);
+}
+
+form {
+  display: grid;
+  gap: 0.6rem;
+}
+
+input,
+select,
+button {
+  font: inherit;
+  padding: 0.65rem;
+  border-radius: 8px;
+  border: 1px solid #d6d9e2;
+}
+
+button {
+  background: #1f3a8a;
+  border: none;
+  color: white;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #172c68;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.8rem;
+}
+
+.stats div {
+  background: #eef2ff;
+  border-radius: 8px;
+  padding: 0.8rem;
+  text-align: center;
+}
+
+.stats span {
+  display: block;
+  font-size: 1.8rem;
+  font-weight: 700;
+}
+
+ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+li {
+  padding: 0.7rem;
+  border: 1px solid #eceff6;
+  border-radius: 8px;
+  background: #fbfcff;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.task-done {
+  text-decoration: line-through;
+  color: #6b7280;
+}
