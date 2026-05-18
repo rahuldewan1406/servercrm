@@ -45,6 +45,38 @@ python3 -m http.server 8080
 3. Open browser: `http://localhost:8080`
 4. Stop server with `Ctrl + C`.
 
+### Option 3: Run the backend and frontend with npm scripts
+1. Open terminal in the project folder.
+2. Install dependencies:
+
+```bash
+npm install
+```
+
+3. Start backend:
+
+```bash
+npm start
+```
+
+4. In a second terminal, serve the frontend:
+
+```bash
+npm run serve
+```
+
+5. Open browser: `http://localhost:8000`
+
+### Startup check
+1. Ensure backend and frontend are running.
+2. Run:
+
+```bash
+npm run check
+```
+
+3. If the script reports that services are reachable, the app is ready.
+
 ## Run in VS Code (VSC)
 
 ### Method A: VS Code + Live Server extension
@@ -81,9 +113,11 @@ Then open `http://localhost:9090`.
 - Lead assignment and pipeline analytics
 - Activity timeline and email/SMS integration
 - Import/export via CSV
+## Project approvals
+For a clear approval workflow and checklist, see `APPROVALS.md`.
+
 ## Multi-user RBAC upgrade
 For a full step-by-step implementation plan, see `docs/RBAC_SETUP.md`.
-
 
 ## SMTP backend setup
 1. Copy `.env.example` to `.env` and fill SMTP values.

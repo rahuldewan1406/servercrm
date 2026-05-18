@@ -29,6 +29,30 @@ q("closeLogin").addEventListener("click", () => q("loginDialog").close());
 q("logoutBtn").addEventListener("click", logout);
 q("loginForm").addEventListener("submit", login);
 
+function setStatus(element, message, type = "info") {
+  if (!element) return;
+  element.textContent = message;
+  element.classList.remove("status-info", "status-warning", "status-error");
+  element.classList.add(type === "warning" ? "status-warning" : type === "error" ? "status-error" : "status-info");
+}
+
+async function checkSmtpApi() {
+  const statusEl = q("smtpStatus");
+  try {
+    const response = await fetch("http://localhost:3001/api/health");
+    const data = await response.json();
+    if (!response.ok || data.status !== "ok") {
+      setStatus(statusEl, "SMTP API is unavailable. Email sending will fallback to mailto links.", "warning");
+      return false;
+    }
+    setStatus(statusEl, "SMTP API is available.", "info");
+    return true;
+  } catch (error) {
+    setStatus(statusEl, "SMTP API is unreachable. Email sending will fallback to mailto links.", "warning");
+    return false;
+  }
+}
+
 function login(event) {
   event.preventDefault();
   const email = q("loginEmail").value.trim().toLowerCase();
@@ -77,12 +101,18 @@ async function sendMail(event) {
       : [q("mailTo").value.trim()].filter(Boolean);
 
   const payload = { recipients, subject: q("mailSubject").value.trim(), body: q("mailBody").value.trim() };
-  if (!payload.recipients.length || !payload.subject || !payload.body) {
-    q("mailStatus").textContent = "Please complete recipients, subject, and message.";
+  if (!payload.recipients.length) {
+    setStatus(q("mailStatus"), "Please provide at least one recipient.", "warning");
+    return;
+  }
+  if (!payload.subject || !payload.body) {
+    setStatus(q("mailStatus"), "Please complete subject and message.", "warning");
     return;
   }
 
-  q("mailStatus").textContent = "Sending via SMTP API...";
+  const mailEl = q("mailStatus");
+  const smtpEl = q("smtpStatus");
+  setStatus(mailEl, "Sending via SMTP API...", "info");
   try {
     const response = await fetch("http://localhost:3001/api/send-email", {
       method: "POST",
@@ -91,11 +121,14 @@ async function sendMail(event) {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || "SMTP API error");
-    q("mailStatus").textContent = data.message || "Email sent.";
+    setStatus(mailEl, data.message || "Email sent.", "info");
     q("mailForm").reset();
-  } catch {
+    await checkSmtpApi();
+  } catch (error) {
     const mailto = `mailto:${encodeURIComponent(payload.recipients[0])}?subject=${encodeURIComponent(payload.subject)}&body=${encodeURIComponent(payload.body)}`;
-    q("mailStatus").innerHTML = `SMTP unavailable. <a href="${mailto}">Open email client</a> as fallback.`;
+    mailEl.innerHTML = `SMTP unavailable. <a href="${mailto}">Open email client</a> as fallback.`;
+    setStatus(smtpEl, "SMTP API request failed. Check backend or environment settings.", "error");
+    console.error('Send mail failed:', error);
   }
 }
 
@@ -106,3 +139,4 @@ function render() { const today = new Date(); const in30 = new Date(Date.now() +
 q("contactList").innerHTML = state.contacts.map((c) => `<li><strong>${c.name}</strong> — ${c.company}<br>${c.email}</li>`).join(""); q("accountList").innerHTML = state.accounts.map((a) => `<li><strong>${a.name}</strong> (${a.tier})<br>Renewal: ${a.renewalDate}</li>`).join(""); q("leadList").innerHTML = state.leads.map((l) => `<li><strong>${l.title}</strong><br>${l.stage} • ₹${l.value.toLocaleString()}</li>`).join(""); q("opportunityList").innerHTML = state.opportunities.map((o) => `<li><strong>${o.name}</strong><br>₹${o.value.toLocaleString()} @ ${o.probability}%</li>`).join(""); q("weightedForecast").textContent = state.opportunities.reduce((s, o) => s + (o.value * o.probability / 100), 0).toLocaleString(); q("projectList").innerHTML = state.projects.map((p) => `<li><strong>${p.name}</strong><br>${p.status} • PM: ${p.manager}</li>`).join(""); q("activityList").innerHTML = state.activities.slice(0, 8).map((a) => `<li><strong>${a.type}</strong><br>${a.note}</li>`).join(""); const filter = q("ticketFilter").value; const tks = filter === "All" ? state.tickets : state.tickets.filter((t) => t.status === filter); q("ticketList").innerHTML = tks.map((t) => `<li><strong>${t.title}</strong><br>${t.priority} • ${t.status}</li>`).join(""); const total = Math.max(1, state.tickets.length); q("ticketAnalytics").innerHTML = [["Open", open], ["In Progress", progress], ["Resolved", resolved]].map(([l, v]) => `<div class='bar-row'><span>${l}</span><div class='bar'><i style='width:${(v / total) * 100}%'></i></div><b>${v}</b></div>`).join(""); q("customerSelect").innerHTML = `<option value="">Select customer</option>` + state.contacts.map((c) => `<option value="${c.id}">${c.name}</option>`).join(""); renderCustomer360(); }
 renderSession();
 render();
+checkSmtpApi();

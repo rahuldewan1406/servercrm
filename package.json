@@ -4,7 +4,10 @@
   "private": true,
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "serve": "python3 -m http.server 8000",
+    "start:dev": "npm run start & npm run serve",
+    "check": "node startup-check.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
