@@ -11,6 +11,11 @@ A lightweight CRM starter app for managing:
 - Add and view leads with stage and estimated value
 - Add and complete follow-up tasks
 - Persistent storage using browser localStorage
+- Login button placeholder for auth integration
+- Demographic capture for contacts
+- Single, multiple, and bulk email compose options
+- Support ticket overview dashboard
+- Customer 360° quick profile panel
 
 ## Project files
 - `index.html` → UI structure
@@ -74,3 +79,9 @@ Then open `http://localhost:9090`.
 ## Multi-user RBAC upgrade
 For a full step-by-step implementation plan, see `docs/RBAC_SETUP.md`.
 
+
+## SMTP backend setup
+1. Copy `.env.example` to `.env` and fill SMTP values.
+2. Run `npm install`.
+3. Start SMTP API with `npm start` (runs on `http://localhost:3001`).
+4. Start frontend (python server) and use Email Center to send mail.
