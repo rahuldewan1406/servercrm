@@ -808,6 +808,7 @@ function renderAll() {
   renderDocuments();
   if (q('reportBody')) renderReport();
   renderPortalAdmin();
+  initChat();
   renderHealthScores();
   renderNotifBell();
   renderNotifPanel();
@@ -2617,5 +2618,408 @@ function checkPortalToken() {
     // Show portal view fullscreen
     setTimeout(()=>renderPortalView(session.contactId), 300);
   }
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+//  CHAT MESSENGER
+//  Contact-phone-number based internal messaging
+// ══════════════════════════════════════════════════════════════════
+
+// ── State ─────────────────────────────────────────────────────────
+const chatState = {
+  open:          false,
+  fullscreen:    false,
+  activePhone:   null,   // phone number = thread ID
+  activeContact: null,
+  filter:        'all',
+  threads:       JSON.parse(localStorage.getItem('crm_chat_threads') || '{}'),
+  // threads: { [phone]: { messages: [...], lastRead: timestamp } }
+};
+
+const QUICK_REPLIES = [
+  'Thank you for reaching out! We will get back to you shortly.',
+  'Your request has been received and is being processed.',
+  'Could you please provide more details?',
+  'We have escalated this to the relevant team.',
+  'Your issue has been resolved. Please let us know if you need further assistance.',
+  'Meeting confirmed. Please find the details attached.',
+  'Please share the required documents at your earliest convenience.',
+  'We appreciate your patience.',
+];
+
+const AVATAR_COLORS = ['#2563eb','#7c3aed','#0d9488','#d97706','#e11d48','#16a34a','#0891b2','#9333ea'];
+function avatarColor(name) { let h=0; for(const c of name||'') h=(h*31+c.charCodeAt(0))%AVATAR_COLORS.length; return AVATAR_COLORS[h]; }
+
+function saveChatState() {
+  localStorage.setItem('crm_chat_threads', JSON.stringify(chatState.threads));
+}
+
+// ── Normalise phone number (use as thread key) ────────────────────
+function normalisePhone(phone) {
+  return (phone||'').replace(/\D/g,'').slice(-10); // last 10 digits
+}
+
+// ── Open / Close ──────────────────────────────────────────────────
+function toggleChat() {
+  chatState.open = !chatState.open;
+  const panel = q('chatMessenger');
+  if (chatState.open) {
+    panel.classList.remove('hidden');
+    renderChatList();
+    updateChatBadge();
+  } else {
+    panel.classList.add('hidden');
+  }
+}
+
+function toggleChatFullscreen() {
+  chatState.fullscreen = !chatState.fullscreen;
+  q('chatMessenger').classList.toggle('fullscreen', chatState.fullscreen);
+  q('chatExpandBtn').textContent = chatState.fullscreen ? '⛶' : '⛶';
+}
+
+// Close chat when clicking outside
+document.addEventListener('click', e => {
+  const panel = q('chatMessenger');
+  const btn   = q('chatToggleBtn');
+  if (panel && btn && !panel.contains(e.target) && !btn.contains(e.target) && chatState.open) {
+    // Don't close on click inside
+  }
+});
+
+// ── Filter tabs ───────────────────────────────────────────────────
+function setChatFilter(filter, el) {
+  chatState.filter = filter;
+  document.querySelectorAll('.chat-filter-tab').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  renderChatList();
+}
+
+// ── Render contact list ───────────────────────────────────────────
+function renderChatList() {
+  const search = (q('chatSearch')?.value||'').toLowerCase();
+  let contacts = [...state.contacts];
+
+  // Apply filter
+  if (chatState.filter === 'phone')  contacts = contacts.filter(c=>c.phone);
+  if (chatState.filter === 'unread') contacts = contacts.filter(c=>{
+    const ph = normalisePhone(c.phone);
+    const thread = chatState.threads[ph];
+    if (!thread?.messages?.length) return false;
+    const lastRead = thread.lastRead||0;
+    return thread.messages.some(m=>m.direction==='received'&&new Date(m.time)>new Date(lastRead));
+  });
+
+  // Search
+  if (search) contacts = contacts.filter(c=>c.name.toLowerCase().includes(search)||(c.phone||'').includes(search));
+
+  // Sort: contacts with recent messages first
+  contacts.sort((a,b)=>{
+    const tA = chatState.threads[normalisePhone(a.phone)]?.messages?.slice(-1)[0]?.time||'';
+    const tB = chatState.threads[normalisePhone(b.phone)]?.messages?.slice(-1)[0]?.time||'';
+    if (tA||tB) return tB.localeCompare(tA);
+    return a.name.localeCompare(b.name);
+  });
+
+  const listEl = q('chatContactList');
+  const countEl = q('chatContactCountLabel');
+  if (countEl) countEl.textContent = `${contacts.length} contacts`;
+
+  if (!contacts.length) {
+    listEl.innerHTML = `<div style="padding:1.5rem;text-align:center;color:var(--text-3);font-size:.8rem">${search?'No contacts found.':'No contacts in CRM yet.'}</div>`;
+    return;
+  }
+
+  listEl.innerHTML = contacts.map(c => {
+    const ph       = normalisePhone(c.phone);
+    const hasPhone = Boolean(c.phone);
+    const thread   = chatState.threads[ph] || { messages: [] };
+    const lastMsg  = thread.messages[thread.messages.length-1];
+    const lastRead = thread.lastRead||0;
+    const unread   = thread.messages.filter(m=>m.direction==='received'&&new Date(m.time)>new Date(lastRead)).length;
+    const isActive = chatState.activePhone === ph;
+    const preview  = lastMsg ? (lastMsg.direction==='sent'?'You: ':'')+lastMsg.text.slice(0,35) : (hasPhone?'Tap to start chatting':'No phone number');
+    const timeStr  = lastMsg ? formatChatTime(lastMsg.time) : '';
+    const color    = avatarColor(c.name);
+
+    return `<div class="chat-contact-item${isActive?' active':''}${!hasPhone?' no-phone':''}"
+      onclick="${hasPhone?`openChatThread('${ph}','${c.id}')`:''}"
+      title="${!hasPhone?'No phone number — add one in Contacts':''}">
+      <div class="chat-contact-avatar" style="background:${color}">${c.name.charAt(0).toUpperCase()}</div>
+      <div class="chat-contact-info">
+        <div class="chat-contact-name">${c.name}</div>
+        <div class="chat-contact-preview">${preview}</div>
+      </div>
+      <div class="chat-contact-meta">
+        ${timeStr?`<span class="chat-contact-time">${timeStr}</span>`:''}
+        ${unread?`<span class="chat-unread-dot">${unread}</span>`:''}
+        ${!hasPhone?`<span class="chat-no-phone-badge">No #</span>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Open thread ───────────────────────────────────────────────────
+function openChatThread(phone, contactId) {
+  chatState.activePhone   = phone;
+  chatState.activeContact = state.contacts.find(c=>c.id===contactId);
+
+  // Mark read
+  if (!chatState.threads[phone]) chatState.threads[phone] = { messages: [] };
+  chatState.threads[phone].lastRead = new Date().toISOString();
+  saveChatState();
+
+  const contact = chatState.activeContact;
+  const color   = avatarColor(contact?.name||'');
+
+  // Update thread header
+  q('chatThreadAvatar').style.background = color;
+  q('chatThreadAvatar').textContent = (contact?.name||'?').charAt(0).toUpperCase();
+  q('chatThreadName').textContent   = contact?.name || 'Unknown';
+  q('chatThreadPhone').textContent  = `📱 ${contact?.phone||phone} · ${contact?.company||''}`;
+  q('chatCallBtn').onclick          = () => callContact(contact?.phone||phone);
+
+  // Show thread panel
+  q('chatThreadEmpty').classList.add('hidden');
+  q('chatThreadWrap').classList.remove('hidden');
+
+  // Mobile: hide sidebar
+  q('chatSidebar').classList.add('thread-open');
+
+  renderMessages();
+  renderChatList();
+  updateChatBadge();
+
+  // Focus input
+  setTimeout(()=>q('chatInput')?.focus(), 100);
+}
+
+function closeChatThread() {
+  chatState.activePhone   = null;
+  chatState.activeContact = null;
+  q('chatThreadEmpty').classList.remove('hidden');
+  q('chatThreadWrap').classList.add('hidden');
+  q('chatSidebar').classList.remove('thread-open');
+  renderChatList();
+}
+
+// ── Render messages ───────────────────────────────────────────────
+function renderMessages() {
+  const thread  = chatState.threads[chatState.activePhone] || { messages: [] };
+  const msgsEl  = q('chatMessages');
+  if (!msgsEl) return;
+
+  if (!thread.messages.length) {
+    msgsEl.innerHTML = `
+      <div class="chat-system-msg" style="margin-top:auto">
+        This is the beginning of your conversation with <strong>${chatState.activeContact?.name||''}</strong>.
+      </div>
+      <div class="chat-system-msg" style="font-size:.7rem;color:var(--text-3)">
+        📱 ${chatState.activeContact?.phone||''} · Messages are stored locally on this device.
+      </div>`;
+    return;
+  }
+
+  // Group messages by date, then by sender
+  let html = '';
+  let lastDate = '';
+  let lastDir  = '';
+  let groupOpen = false;
+
+  thread.messages.forEach((msg, i) => {
+    const msgDate = new Date(msg.time).toDateString();
+    const today   = new Date().toDateString();
+    const yesterday = new Date(Date.now()-86400000).toDateString();
+
+    // Date divider
+    if (msgDate !== lastDate) {
+      if (groupOpen) { html += '</div>'; groupOpen=false; }
+      const label = msgDate===today?'Today':msgDate===yesterday?'Yesterday':new Date(msg.time).toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'});
+      html += `<div class="chat-date-divider"><span>${label}</span></div>`;
+      lastDate = msgDate;
+      lastDir  = '';
+    }
+
+    // New group if direction changes
+    if (msg.direction !== lastDir) {
+      if (groupOpen) { html += '</div>'; }
+      html += `<div class="chat-msg-group ${msg.direction}">`;
+      groupOpen = true;
+      lastDir = msg.direction;
+    }
+
+    // Note vs regular message
+    if (msg.type === 'note') {
+      if (groupOpen) { html += '</div>'; groupOpen=false; lastDir=''; }
+      html += `<div class="chat-msg-note"><div class="chat-msg-note-label">📌 Internal Note</div>${escapeHtml(msg.text)}<div style="font-size:.65rem;opacity:.6;margin-top:4px;text-align:right">${formatChatTime(msg.time)} · ${msg.sender||'You'}</div></div>`;
+      return;
+    }
+
+    // Regular bubble
+    const tick = msg.direction==='sent' ? `<span class="chat-bubble-tick read">✓✓</span>` : '';
+    html += `<div class="chat-bubble">
+      ${escapeHtml(msg.text)}
+      <div class="chat-bubble-meta">
+        <span class="chat-bubble-time">${formatChatTime(msg.time)}</span>
+        ${tick}
+      </div>
+    </div>`;
+  });
+
+  if (groupOpen) html += '</div>';
+  msgsEl.innerHTML = html;
+
+  // Scroll to bottom
+  msgsEl.scrollTop = msgsEl.scrollHeight;
+}
+
+// ── Send message ──────────────────────────────────────────────────
+function sendChatMessage() {
+  const input = q('chatInput');
+  const text  = input?.value.trim();
+  if (!text || !chatState.activePhone) return;
+
+  const msg = {
+    id:        crypto.randomUUID(),
+    text,
+    direction: 'sent',
+    type:      'text',
+    time:      new Date().toISOString(),
+    sender:    state.session?.name || 'You',
+  };
+
+  if (!chatState.threads[chatState.activePhone]) chatState.threads[chatState.activePhone] = { messages: [] };
+  chatState.threads[chatState.activePhone].messages.push(msg);
+  saveChatState();
+
+  input.value = '';
+  input.style.height = 'auto';
+  renderMessages();
+  renderChatList();
+
+  // Also log as CRM activity
+  state.activities.unshift({
+    id:          crypto.randomUUID(),
+    created_at:  msg.time,
+    type:        'Chat',
+    note:        `[Chat to ${chatState.activeContact?.name||''}]: ${text.slice(0,100)}`,
+    contactId:   chatState.activeContact?.id || null,
+  });
+  persistLocal();
+
+  // Simulate delivery tick update (cosmetic)
+  setTimeout(renderMessages, 800);
+}
+
+// Simulate receiving a message (for demo — in prod this would be webhook/websocket)
+function simulateReceive(text) {
+  if (!chatState.activePhone) return;
+  const msg = {
+    id:        crypto.randomUUID(),
+    text,
+    direction: 'received',
+    type:      'text',
+    time:      new Date().toISOString(),
+    sender:    chatState.activeContact?.name || 'Contact',
+  };
+  chatState.threads[chatState.activePhone].messages.push(msg);
+  saveChatState();
+  renderMessages();
+  renderChatList();
+  updateChatBadge();
+
+  // Push notification
+  pushNotif(
+    `Message from ${msg.sender}`,
+    text.slice(0, 60),
+    '💬', 'info'
+  );
+}
+
+function handleChatKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
+}
+
+function autoResizeChatInput(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+}
+
+// ── Attach note ───────────────────────────────────────────────────
+function attachNote() {
+  const text = prompt('Add an internal note to this conversation:');
+  if (!text?.trim() || !chatState.activePhone) return;
+  const msg = { id:crypto.randomUUID(), text:text.trim(), direction:'sent', type:'note', time:new Date().toISOString(), sender:state.session?.name||'You' };
+  chatState.threads[chatState.activePhone].messages.push(msg);
+  saveChatState();
+  renderMessages();
+}
+
+// ── Quick replies ─────────────────────────────────────────────────
+function insertQuickReply() {
+  const panel = q('quickRepliesPanel');
+  panel.classList.toggle('hidden');
+  const list = q('quickRepliesList');
+  list.innerHTML = QUICK_REPLIES.map((r,i)=>`<button class="quick-reply-chip" onclick="useQuickReply(${i})">${r.slice(0,50)}${r.length>50?'…':''}</button>`).join('');
+}
+
+function useQuickReply(idx) {
+  const input = q('chatInput');
+  if (input) { input.value = QUICK_REPLIES[idx]; input.focus(); }
+  q('quickRepliesPanel').classList.add('hidden');
+}
+
+// ── Clear thread ──────────────────────────────────────────────────
+function clearThread() {
+  if (!chatState.activePhone || !confirm('Clear all messages in this conversation?')) return;
+  chatState.threads[chatState.activePhone] = { messages: [], lastRead: new Date().toISOString() };
+  saveChatState();
+  renderMessages();
+  renderChatList();
+}
+
+// ── Call contact ──────────────────────────────────────────────────
+function callContact(phone) {
+  const p = phone || chatState.activeContact?.phone;
+  if (p) window.open(`tel:${p}`);
+}
+
+// ── Badge ─────────────────────────────────────────────────────────
+function updateChatBadge() {
+  let total = 0;
+  state.contacts.forEach(c => {
+    const ph = normalisePhone(c.phone);
+    if (!ph) return;
+    const thread   = chatState.threads[ph];
+    if (!thread?.messages?.length) return;
+    const lastRead = thread.lastRead||0;
+    total += thread.messages.filter(m=>m.direction==='received'&&new Date(m.time)>new Date(lastRead)).length;
+  });
+  const badge = q('chatUnreadBadge');
+  if (!badge) return;
+  if (total > 0) { badge.textContent = total>9?'9+':total; badge.classList.remove('hidden'); }
+  else badge.classList.add('hidden');
+}
+
+// ── Helpers ───────────────────────────────────────────────────────
+function formatChatTime(iso) {
+  const d   = new Date(iso);
+  const now = new Date();
+  const diffDays = Math.floor((now-d)/86400000);
+  if (diffDays === 0) return d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true});
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7)  return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+  return d.toLocaleDateString('en-IN',{day:'numeric',month:'short'});
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+
+// ── Init on renderAll ─────────────────────────────────────────────
+function initChat() {
+  updateChatBadge();
+  if (chatState.open) renderChatList();
 }
 

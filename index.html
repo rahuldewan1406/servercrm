@@ -155,6 +155,13 @@
     </nav>
     <div class="topbar-user">
       <span id="smtpDot" class="status-dot" title="SMTP Status"></span>
+      <!-- Chat messenger button -->
+      <div class="chat-bell-wrap" id="chatBellWrap">
+        <button class="notif-bell" id="chatToggleBtn" onclick="toggleChat()" title="Messages">
+          💬
+          <span class="notif-badge hidden" id="chatUnreadBadge">0</span>
+        </button>
+      </div>
       <div class="notif-bell-wrap" id="notifBellWrap">
         <button class="notif-bell" id="notifBell" onclick="toggleNotifPanel()" title="Notifications">
           🔔
@@ -1050,6 +1057,111 @@
       <button type="button" class="btn-modal-primary" onclick="sendProjectStatus()">Send Report ↗</button>
     </div>
   </dialog>
+
+  <!-- ══════════════════════════════════════════════════
+       CHAT MESSENGER (Contact-phone based)
+  ══════════════════════════════════════════════════ -->
+  <div id="chatMessenger" class="chat-messenger hidden">
+
+    <!-- Header -->
+    <div class="chat-header">
+      <div class="chat-header-left">
+        <div class="chat-logo">💬</div>
+        <div>
+          <div class="chat-header-title">DIC-NHAI Messenger</div>
+          <div class="chat-header-sub">Contact-based internal chat</div>
+        </div>
+      </div>
+      <div class="chat-header-actions">
+        <button class="chat-icon-btn" onclick="toggleChatFullscreen()" title="Expand/Collapse" id="chatExpandBtn">⛶</button>
+        <button class="chat-icon-btn" onclick="toggleChat()" title="Close">✕</button>
+      </div>
+    </div>
+
+    <div class="chat-body">
+
+      <!-- Left: Contact list -->
+      <div class="chat-sidebar" id="chatSidebar">
+        <div class="chat-search-bar">
+          <input id="chatSearch" class="chat-search-input" placeholder="🔍 Search contacts…" oninput="renderChatList()" />
+        </div>
+        <div class="chat-filter-tabs">
+          <button class="chat-filter-tab active" data-filter="all" onclick="setChatFilter('all',this)">All</button>
+          <button class="chat-filter-tab" data-filter="unread" onclick="setChatFilter('unread',this)">Unread</button>
+          <button class="chat-filter-tab" data-filter="phone" onclick="setChatFilter('phone',this)">With Phone</button>
+        </div>
+        <div id="chatContactList" class="chat-contact-list"></div>
+        <div class="chat-sidebar-footer">
+          <span id="chatContactCountLabel" style="font-size:.7rem;color:var(--text-3)">0 contacts</span>
+        </div>
+      </div>
+
+      <!-- Right: Message thread -->
+      <div class="chat-thread-panel" id="chatThreadPanel">
+
+        <!-- Empty state -->
+        <div class="chat-thread-empty" id="chatThreadEmpty">
+          <div class="chat-empty-icon">💬</div>
+          <h3>DIC-NHAI Messenger</h3>
+          <p>Select a contact to start messaging.<br>Only contacts with a mobile number are available.</p>
+        </div>
+
+        <!-- Active thread -->
+        <div class="chat-thread-wrap hidden" id="chatThreadWrap">
+
+          <!-- Thread header -->
+          <div class="chat-thread-header" id="chatThreadHeader">
+            <button class="chat-back-btn" onclick="closeChatThread()" title="Back">‹</button>
+            <div class="chat-thread-avatar" id="chatThreadAvatar"></div>
+            <div class="chat-thread-info">
+              <div class="chat-thread-name" id="chatThreadName"></div>
+              <div class="chat-thread-phone" id="chatThreadPhone"></div>
+            </div>
+            <div class="chat-thread-actions">
+              <button class="chat-icon-btn" onclick="callContact()" title="Call" id="chatCallBtn">📞</button>
+              <button class="chat-icon-btn" onclick="clearThread()" title="Clear chat">🗑</button>
+            </div>
+          </div>
+
+          <!-- Messages -->
+          <div class="chat-messages" id="chatMessages"></div>
+
+          <!-- Typing indicator -->
+          <div class="chat-typing hidden" id="chatTyping">
+            <span></span><span></span><span></span>
+          </div>
+
+          <!-- Compose bar -->
+          <div class="chat-compose-bar">
+            <div class="chat-compose-attachments">
+              <button class="chat-compose-btn" onclick="insertQuickReply()" title="Quick replies">⚡</button>
+              <button class="chat-compose-btn" onclick="attachNote()" title="Attach note">📎</button>
+            </div>
+            <textarea
+              id="chatInput"
+              class="chat-compose-input"
+              placeholder="Type a message… (Enter to send, Shift+Enter for new line)"
+              rows="1"
+              oninput="autoResizeChatInput(this)"
+              onkeydown="handleChatKeydown(event)"
+            ></textarea>
+            <button class="chat-send-btn" id="chatSendBtn" onclick="sendChatMessage()">
+              <span>↑</span>
+            </button>
+          </div>
+
+          <!-- Quick replies panel -->
+          <div class="quick-replies-panel hidden" id="quickRepliesPanel">
+            <div class="quick-replies-title">Quick Replies</div>
+            <div id="quickRepliesList" class="quick-replies-list"></div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- end chat messenger -->
+
 
   <script src="app.js"></script>
 </body>
