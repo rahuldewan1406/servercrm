@@ -81,20 +81,53 @@ async function tryRefresh() {
 // ── Auth ──────────────────────────────────────────────────────────────────────
 async function login(e) {
   e.preventDefault();
-  q('loginStatus').textContent = '';
+  const errEl   = q('loginStatus');
+  const btn     = q('loginSubmitBtn');
+  const btnText = q('loginBtnText');
+  const spinner = q('loginBtnSpinner');
+  if (errEl) errEl.textContent = '';
+  if (btn)    { btn.disabled=true; }
+  if (btnText)  btnText.classList.add('hidden');
+  if (spinner)  spinner.classList.remove('hidden');
   try {
-    const r = await fetch(`${API}/auth/login`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ email:q('loginEmail').value.trim().toLowerCase(), password:q('loginPassword').value }) });
+    const r = await fetch(`${API}/auth/login`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ email:q('loginEmail').value.trim().toLowerCase(), password:q('loginPassword').value })
+    });
     const d = await r.json();
-    if (!r.ok) { q('loginStatus').textContent = d.message||'Login failed.'; return; }
-    state.accessToken = d.accessToken; state.refreshToken = d.refreshToken;
-    state.session = d.user; state.permissions = new Set(d.permissions);
-    q('loginForm').reset(); q('loginDialog').close();
+    if (!r.ok) {
+      if (errEl) errEl.textContent = d.message||'Invalid credentials.';
+      if (btn)    btn.disabled=false;
+      if (btnText)  btnText.classList.remove('hidden');
+      if (spinner)  spinner.classList.add('hidden');
+      // Shake the form
+      const form = q('loginForm');
+      if (form) { form.style.animation='none'; setTimeout(()=>form.style.animation='loginShake .4s ease',10); }
+      return;
+    }
+    state.accessToken  = d.accessToken;
+    state.refreshToken = d.refreshToken;
+    state.session      = d.user;
+    state.permissions  = new Set(d.permissions);
+    // Hide login screen with animation
+    const screen = q('loginScreen');
+    if (screen) screen.classList.add('hidden');
+    setTimeout(()=>{ if(screen) screen.style.display='none'; }, 450);
+    q('loginForm').reset();
     renderSession(); await loadAllData(); renderAll();
-  } catch { q('loginStatus').textContent = 'Cannot reach API (port 3002). Is the server running?'; }
+  } catch {
+    if (errEl) errEl.textContent = 'Cannot reach API server on port 3002. Please ensure the backend is running.';
+    if (btn)    btn.disabled=false;
+    if (btnText)  btnText.classList.remove('hidden');
+    if (spinner)  spinner.classList.add('hidden');
+  }
 }
 async function logout() {
   if (state.refreshToken) apiFetch('/auth/logout',{method:'POST',body:JSON.stringify({refreshToken:state.refreshToken})}).catch(()=>{});
   Object.assign(state, { session:null, accessToken:null, refreshToken:null, permissions:new Set(), contacts:[], leads:[], tickets:[] });
+  // Show login screen again
+  const screen = q('loginScreen');
+  if (screen) { screen.style.display='flex'; setTimeout(()=>screen.classList.remove('hidden'),10); }
   renderSession(); renderAll();
 }
 
@@ -155,9 +188,11 @@ function openModal(id) {
 function closeModal(id) { q(id).close(); }
 
 // ── Forms ─────────────────────────────────────────────────────────────────────
-q('loginForm').addEventListener('submit', login);
 q('logoutBtn').addEventListener('click', logout);
-q('loginBtn').addEventListener('click', ()=>q('loginDialog').showModal());
+q('loginBtn').addEventListener('click', ()=>{
+  const screen=q('loginScreen');
+  if(screen){screen.style.display='flex';setTimeout(()=>screen.classList.remove('hidden'),10);}
+});
 document.querySelectorAll('.tnav').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
 q('mailForm').addEventListener('submit', sendMail);
 
@@ -1200,7 +1235,44 @@ document.addEventListener('DOMContentLoaded', ()=>{
   if (ri) ri.addEventListener('keydown', e=>{ if(e.key==='Enter') confirmRename(); });
 });
 
+// ── Helpers for login screen ───────────────────────────────────────────────────
+function togglePasswordVisibility() {
+  const input = q('loginPassword');
+  const btn   = q('loginEyeBtn');
+  if (!input) return;
+  if (input.type === 'password') { input.type='text'; if(btn) btn.textContent='🙈'; }
+  else { input.type='password'; if(btn) btn.textContent='👁'; }
+}
+
+async function checkLoginApiStatus() {
+  const dot  = q('loginApiDot');
+  const text = q('loginApiText');
+  try {
+    const r = await fetch(`${API}/health`, {signal: AbortSignal.timeout(3000)});
+    if (r.ok) {
+      if(dot)  dot.className='api-dot online';
+      if(text) text.textContent='API server online (port 3002)';
+    } else throw new Error('not ok');
+  } catch {
+    if(dot)  dot.className='api-dot offline';
+    if(text) text.textContent='API server offline — start with: node api-server.js';
+  }
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
+// Show login screen on load (hide main app until authenticated)
+const _loginScreen = q('loginScreen');
+if (_loginScreen) {
+  // Check if there's a portal token — if so show portal directly
+  const _portalParam = new URLSearchParams(window.location.search).get('portal');
+  if (_portalParam) {
+    _loginScreen.style.display = 'none';
+    checkPortalToken();
+  }
+}
+q('loginForm').addEventListener('submit', login);
+checkLoginApiStatus();
+
 renderSession();
 renderAll();
 checkSmtp();
@@ -1208,7 +1280,6 @@ q('dashDate').textContent = new Date().toLocaleDateString('en-IN',{weekday:'long
 requestNotifPermission();
 runNotifScan();
 setInterval(runNotifScan, 5 * 60 * 1000);
-checkPortalToken();
 
 // ══════════════════════════════════════════════════════════════════
 //  FEATURE 1: REPORTS & CSV/PDF EXPORT

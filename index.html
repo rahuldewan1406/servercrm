@@ -3,20 +3,142 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OrgCRM — Enterprise</title>
+  <title>DIC — NHAI CRM Command Centre</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&family=Playfair+Display:wght@400;600;700&family=Source+Sans+3:wght@300;400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
 
   <!-- ── Top Bar ── -->
-  <header class="topbar">
+  
+  <!-- ══════════════════════════════════════════════════
+       DIC-NHAI FULL PAGE LOGIN SCREEN
+  ══════════════════════════════════════════════════ -->
+  <div id="loginScreen" class="login-screen">
+
+    <!-- Animated background -->
+    <div class="login-bg">
+      <div class="login-bg-grid"></div>
+      <div class="login-bg-glow login-bg-glow-1"></div>
+      <div class="login-bg-glow login-bg-glow-2"></div>
+      <div class="login-bg-glow login-bg-glow-3"></div>
+    </div>
+
+    <!-- Left panel — branding -->
+    <div class="login-left">
+      <div class="login-left-inner">
+
+        <!-- Emblem -->
+        <div class="login-emblem">
+          <div class="emblem-ring emblem-ring-1"></div>
+          <div class="emblem-ring emblem-ring-2"></div>
+          <div class="emblem-core">
+            <div class="emblem-icon">🛣</div>
+          </div>
+        </div>
+
+        <!-- Org identity -->
+        <div class="login-org">
+          <div class="login-org-abbr">DIC — NHAI</div>
+          <div class="login-org-full">Digital Infrastructure Command</div>
+          <div class="login-org-sub">National Highways Authority of India</div>
+        </div>
+
+        <!-- Divider -->
+        <div class="login-divider"></div>
+
+        <!-- System title -->
+        <div class="login-system-title">CRM Command Centre</div>
+        <div class="login-system-sub">Enterprise Relationship & Project Management Platform</div>
+
+        <!-- Info tags -->
+        <div class="login-tags">
+          <span class="login-tag">🔒 Secure Access</span>
+          <span class="login-tag">📊 Real-time Analytics</span>
+          <span class="login-tag">🏛 Government Grade</span>
+        </div>
+
+        <!-- Footer -->
+        <div class="login-left-footer">
+          <span>© 2025 DIC — NHAI. All rights reserved.</span>
+          <span>Ministry of Road Transport & Highways</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right panel — login form -->
+    <div class="login-right">
+      <div class="login-form-wrap">
+
+        <!-- Mobile logo (hidden on desktop) -->
+        <div class="login-mobile-logo">
+          <div class="login-org-abbr" style="font-size:1.4rem">DIC — NHAI</div>
+        </div>
+
+        <div class="login-form-header">
+          <h2 class="login-form-title">Welcome Back</h2>
+          <p class="login-form-sub">Sign in to access the CRM Command Centre</p>
+        </div>
+
+        <form id="loginForm" class="login-form" autocomplete="on">
+
+          <div class="login-field">
+            <label class="login-label">Email Address</label>
+            <div class="login-input-wrap">
+              <span class="login-input-icon">✉</span>
+              <input id="loginEmail" type="email" class="login-input" placeholder="your@nhai.gov.in" autocomplete="email" required />
+            </div>
+          </div>
+
+          <div class="login-field">
+            <label class="login-label">Password</label>
+            <div class="login-input-wrap">
+              <span class="login-input-icon">🔑</span>
+              <input id="loginPassword" type="password" class="login-input" placeholder="••••••••••••" autocomplete="current-password" required />
+              <button type="button" class="login-eye-btn" id="loginEyeBtn" onclick="togglePasswordVisibility()" title="Show/hide password">👁</button>
+            </div>
+          </div>
+
+          <div class="login-options">
+            <label class="login-remember">
+              <input type="checkbox" id="loginRemember" />
+              <span>Remember me</span>
+            </label>
+          </div>
+
+          <p id="loginStatus" class="login-error"></p>
+
+          <button type="submit" class="login-submit-btn" id="loginSubmitBtn">
+            <span id="loginBtnText">Sign In to CRM</span>
+            <span id="loginBtnSpinner" class="login-spinner hidden"></span>
+          </button>
+
+        </form>
+
+        <div class="login-form-footer">
+          <div class="login-credentials-hint">
+            <span class="hint-label">Demo credentials</span>
+            <code>admin@crm.local</code> / <code>admin123</code>
+          </div>
+          <div class="login-api-status" id="loginApiStatus">
+            <span class="api-dot" id="loginApiDot"></span>
+            <span id="loginApiText">Checking API…</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+  <!-- end login screen -->
+
+<header class="topbar">
     <div class="topbar-brand">
       <div class="brand-icon">◈</div>
       <div>
-        <div class="brand-name">OrgCRM</div>
-        <div class="brand-sub">Enterprise Edition</div>
+        <div class="brand-name">DIC — NHAI CRM</div>
+        <div class="brand-sub">Command Centre</div>
       </div>
     </div>
     <nav class="topbar-nav">
@@ -579,17 +701,6 @@
        MODALS
   ══════════════════════════════════════════════════ -->
 
-  <!-- Login -->
-  <dialog id="loginDialog" class="modal-dialog">
-    <div class="modal-header"><h3>Sign In to OrgCRM</h3><button class="modal-close" onclick="this.closest('dialog').close()">✕</button></div>
-    <form id="loginForm" class="modal-body">
-      <label>Email<input id="loginEmail" type="email" placeholder="admin@crm.local" /></label>
-      <label>Password<input id="loginPassword" type="password" placeholder="••••••••" /></label>
-      <p class="hint-text">Default: admin@crm.local / admin123 · API on port 3002</p>
-      <button type="submit" class="btn-modal-primary">Sign In</button>
-      <p id="loginStatus" class="form-error"></p>
-    </form>
-  </dialog>
 
   <!-- Contact Modal -->
   <dialog id="contactModal" class="modal-dialog">
