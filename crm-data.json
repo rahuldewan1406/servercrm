@@ -1,0 +1,393 @@
+{
+  "users": [
+    {
+      "id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "name": "CRM Admin",
+      "email": "admin@crm.local",
+      "password_hash": "$2a$12$17aFmIKXNk4t6J0Cx31cxu9llayQOOgNOdHAXfKqkYJDIH3.q/0dC",
+      "is_active": 1,
+      "created_at": "2026-05-19T05:44:51.720Z"
+    }
+  ],
+  "roles": [
+    {
+      "id": "role_admin",
+      "name": "admin"
+    },
+    {
+      "id": "role_manager",
+      "name": "manager"
+    },
+    {
+      "id": "role_sales",
+      "name": "sales_rep"
+    },
+    {
+      "id": "role_viewer",
+      "name": "viewer"
+    }
+  ],
+  "permissions": [
+    {
+      "id": "perm_contacts_read",
+      "key": "contacts.read"
+    },
+    {
+      "id": "perm_contacts_create",
+      "key": "contacts.create"
+    },
+    {
+      "id": "perm_contacts_update",
+      "key": "contacts.update"
+    },
+    {
+      "id": "perm_contacts_delete",
+      "key": "contacts.delete"
+    },
+    {
+      "id": "perm_leads_read",
+      "key": "leads.read"
+    },
+    {
+      "id": "perm_leads_create",
+      "key": "leads.create"
+    },
+    {
+      "id": "perm_leads_update",
+      "key": "leads.update"
+    },
+    {
+      "id": "perm_leads_delete",
+      "key": "leads.delete"
+    },
+    {
+      "id": "perm_tickets_read",
+      "key": "tickets.read"
+    },
+    {
+      "id": "perm_tickets_create",
+      "key": "tickets.create"
+    },
+    {
+      "id": "perm_tickets_update",
+      "key": "tickets.update"
+    },
+    {
+      "id": "perm_tickets_delete",
+      "key": "tickets.delete"
+    },
+    {
+      "id": "perm_users_read",
+      "key": "users.read"
+    },
+    {
+      "id": "perm_users_create",
+      "key": "users.create"
+    },
+    {
+      "id": "perm_users_update",
+      "key": "users.update"
+    },
+    {
+      "id": "perm_users_delete",
+      "key": "users.delete"
+    }
+  ],
+  "user_roles": [
+    {
+      "user_id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "role_id": "role_admin"
+    }
+  ],
+  "role_permissions": [
+    {
+      "role_id": "role_admin",
+      "permission_id": "perm_contacts_read"
+    },
+    {
+      "role_id": "role_admin",
+      "permission_id": "perm_contacts_create"
+    },
+    {
+      "role_id": "role_admin",
+      "permission_id": "perm_contacts_update"
+    },
+    {
+      "role_id": "role_admin",
+      "permission_id": "perm_contacts_delete"
+    },
+    {
+      "role_id": "role_admin",
+      "permission_id": "perm_leads_read"
+    },
+    {
+      "role_id": "role_admin",
+      "permission_id": "perm_leads_create"
+    },
+    {
+      "role_id": "role_admin",
+      "permission_id": "perm_leads_update"
+    },
+    {
+      "role_id": "role_admin",
+      "permission_id": "perm_leads_delete"
+    },
+    {
+      "role_id": "role_admin",
+      "permission_id": "perm_tickets_read"
+    },
+    {
+      "role_id": "role_admin",
+      "permission_id": "perm_tickets_create"
+    },
+    {
+      "role_id": "role_admin",
+      "permission_id": "perm_tickets_update"
+    },
+    {
+      "role_id": "role_admin",
+      "permission_id": "perm_tickets_delete"
+    },
+    {
+      "role_id": "role_admin",
+      "permission_id": "perm_users_read"
+    },
+    {
+      "role_id": "role_admin",
+      "permission_id": "perm_users_create"
+    },
+    {
+      "role_id": "role_admin",
+      "permission_id": "perm_users_update"
+    },
+    {
+      "role_id": "role_admin",
+      "permission_id": "perm_users_delete"
+    },
+    {
+      "role_id": "role_manager",
+      "permission_id": "perm_contacts_read"
+    },
+    {
+      "role_id": "role_manager",
+      "permission_id": "perm_contacts_create"
+    },
+    {
+      "role_id": "role_manager",
+      "permission_id": "perm_contacts_update"
+    },
+    {
+      "role_id": "role_manager",
+      "permission_id": "perm_contacts_delete"
+    },
+    {
+      "role_id": "role_manager",
+      "permission_id": "perm_leads_read"
+    },
+    {
+      "role_id": "role_manager",
+      "permission_id": "perm_leads_create"
+    },
+    {
+      "role_id": "role_manager",
+      "permission_id": "perm_leads_update"
+    },
+    {
+      "role_id": "role_manager",
+      "permission_id": "perm_leads_delete"
+    },
+    {
+      "role_id": "role_manager",
+      "permission_id": "perm_tickets_read"
+    },
+    {
+      "role_id": "role_manager",
+      "permission_id": "perm_tickets_create"
+    },
+    {
+      "role_id": "role_manager",
+      "permission_id": "perm_tickets_update"
+    },
+    {
+      "role_id": "role_manager",
+      "permission_id": "perm_tickets_delete"
+    },
+    {
+      "role_id": "role_sales",
+      "permission_id": "perm_contacts_read"
+    },
+    {
+      "role_id": "role_sales",
+      "permission_id": "perm_contacts_create"
+    },
+    {
+      "role_id": "role_sales",
+      "permission_id": "perm_contacts_update"
+    },
+    {
+      "role_id": "role_sales",
+      "permission_id": "perm_leads_read"
+    },
+    {
+      "role_id": "role_sales",
+      "permission_id": "perm_leads_create"
+    },
+    {
+      "role_id": "role_sales",
+      "permission_id": "perm_leads_update"
+    },
+    {
+      "role_id": "role_sales",
+      "permission_id": "perm_tickets_read"
+    },
+    {
+      "role_id": "role_sales",
+      "permission_id": "perm_tickets_create"
+    },
+    {
+      "role_id": "role_sales",
+      "permission_id": "perm_tickets_update"
+    },
+    {
+      "role_id": "role_viewer",
+      "permission_id": "perm_contacts_read"
+    },
+    {
+      "role_id": "role_viewer",
+      "permission_id": "perm_leads_read"
+    },
+    {
+      "role_id": "role_viewer",
+      "permission_id": "perm_tickets_read"
+    },
+    {
+      "role_id": "role_viewer",
+      "permission_id": "perm_users_read"
+    }
+  ],
+  "refresh_tokens": [
+    {
+      "token": "0c135a11-ef03-4053-b67a-f185ec44e6c1",
+      "user_id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "expires_at": "2026-05-26T05:46:47.920Z"
+    },
+    {
+      "token": "c78679e9-1843-4a77-8b8a-4d961df7d5ed",
+      "user_id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "expires_at": "2026-05-26T07:02:41.883Z"
+    },
+    {
+      "token": "624fda66-4972-4810-8040-afabc1ba72c7",
+      "user_id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "expires_at": "2026-05-26T07:06:53.668Z"
+    },
+    {
+      "token": "cf33618c-b277-419a-ae32-003e5f092e5d",
+      "user_id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "expires_at": "2026-05-26T07:12:43.684Z"
+    },
+    {
+      "token": "269a5edc-5dd1-4395-abb7-b9b6510067f9",
+      "user_id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "expires_at": "2026-05-26T07:19:13.551Z"
+    },
+    {
+      "token": "0895d898-b423-45ae-8313-e64e00565b98",
+      "user_id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "expires_at": "2026-05-26T08:57:32.841Z"
+    },
+    {
+      "token": "7fed73c5-2648-4274-91b0-af77022a5894",
+      "user_id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "expires_at": "2026-05-26T10:32:24.592Z"
+    },
+    {
+      "token": "764f56a7-3435-40d2-83b3-699b1eab5b00",
+      "user_id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "expires_at": "2026-05-26T10:37:27.753Z"
+    },
+    {
+      "token": "d484a80b-3176-4e9a-b10c-e6279692b242",
+      "user_id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "expires_at": "2026-05-26T11:19:07.097Z"
+    },
+    {
+      "token": "67aac514-5726-4e7e-bdaf-5e08085f7859",
+      "user_id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "expires_at": "2026-05-26T11:20:25.679Z"
+    },
+    {
+      "token": "4ebad631-a83b-48cc-952f-3e9c46c8ddfe",
+      "user_id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "expires_at": "2026-05-26T11:23:02.893Z"
+    },
+    {
+      "token": "8e8c929f-cd3a-4571-9bfc-51955a3dcfa4",
+      "user_id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "expires_at": "2026-05-26T11:24:06.188Z"
+    },
+    {
+      "token": "50d9dda9-a4f6-4762-86f9-cfea94b539f7",
+      "user_id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "expires_at": "2026-05-26T11:27:29.646Z"
+    },
+    {
+      "token": "be68f529-6aa3-469d-bad5-426e762d749f",
+      "user_id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "expires_at": "2026-05-26T11:30:11.090Z"
+    }
+  ],
+  "contacts": [
+    {
+      "id": "1ba7531e-e861-4071-ba91-2cecac71b56e",
+      "owner_user_id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "created_at": "2026-05-19T07:19:50.236Z",
+      "updated_at": "2026-05-19T07:19:50.236Z",
+      "name": "RD",
+      "email": "abc@abc.com",
+      "secondary_email": "",
+      "phone": "7506270787",
+      "company": "BU",
+      "gender": "Male",
+      "age": 30,
+      "location": "Mumbai India"
+    },
+    {
+      "id": "ddcba135-626e-4ba8-b42f-e9f9fed4b55d",
+      "owner_user_id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "created_at": "2026-05-19T07:21:45.738Z",
+      "updated_at": "2026-05-19T07:21:45.738Z",
+      "name": "Joy",
+      "email": "jo@jo.com",
+      "secondary_email": "",
+      "phone": "885088",
+      "company": "AU",
+      "gender": "Male",
+      "age": 23,
+      "location": "Noida UP"
+    }
+  ],
+  "leads": [],
+  "tickets": [
+    {
+      "id": "bcf336fa-269f-4fe3-b079-3e5a3a0d8c82",
+      "owner_user_id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "created_at": "2026-05-19T07:20:57.199Z",
+      "updated_at": "2026-05-19T07:20:57.199Z",
+      "contact_id": "1ba7531e-e861-4071-ba91-2cecac71b56e",
+      "title": "API Not working",
+      "priority": "High",
+      "status": "In Progress"
+    },
+    {
+      "id": "e80c8b6e-962b-43a5-af92-fb12df0fdc76",
+      "owner_user_id": "83db3d42-fb52-4d1e-9594-c0fc026dfa79",
+      "created_at": "2026-05-19T07:22:18.776Z",
+      "updated_at": "2026-05-19T07:22:18.776Z",
+      "contact_id": "ddcba135-626e-4ba8-b42f-e9f9fed4b55d",
+      "title": "login issues",
+      "priority": "High",
+      "status": "Open"
+    }
+  ]
+}
