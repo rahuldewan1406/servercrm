@@ -17,11 +17,11 @@ q("customerSelect").addEventListener("change", renderCustomer360);
 
 bindForm("contactForm", () => state.contacts.push({ id: crypto.randomUUID(), name: q("name").value.trim(), email: q("email").value.trim(), secondaryEmail: q("secondaryEmail").value.trim(), phone: q("phone").value.trim(), company: q("company").value.trim(), gender: q("gender").value, age: Number(q("age").value), location: q("location").value.trim() }));
 bindForm("accountForm", () => state.accounts.push({ id: crypto.randomUUID(), name: q("accountName").value.trim(), tier: q("accountTier").value, renewalDate: q("renewalDate").value }));
-bindForm("leadForm", () => state.leads.push({ id: crypto.randomUUID(), title: q("leadName").value.trim(), stage: q("leadStage").value, value: Number(q("leadValue").value) }));
+bindForm("leadForm", () => state.leads.push({ id: crypto.randomUUID(), contactId: q("leadContact").value || null, title: q("leadName").value.trim(), stage: q("leadStage").value, value: Number(q("leadValue").value) }));
 bindForm("opportunityForm", () => state.opportunities.push({ id: crypto.randomUUID(), name: q("oppName").value.trim(), value: Number(q("oppValue").value), probability: Number(q("oppProbability").value) }));
-bindForm("projectForm", () => state.projects.push({ id: crypto.randomUUID(), name: q("projectName").value.trim(), status: q("projectStatus").value, manager: q("projectManager").value.trim() }));
-bindForm("activityForm", () => state.activities.unshift({ id: crypto.randomUUID(), type: q("activityType").value, note: q("activityNote").value.trim(), at: new Date().toISOString() }));
-bindForm("ticketForm", () => state.tickets.push({ id: crypto.randomUUID(), title: q("ticketTitle").value.trim(), priority: q("ticketPriority").value, status: q("ticketStatus").value }));
+bindForm("projectForm", () => state.projects.push({ id: crypto.randomUUID(), contactId: q("projectContact").value || null, name: q("projectName").value.trim(), status: q("projectStatus").value, manager: q("projectManager").value.trim() }));
+bindForm("activityForm", () => state.activities.unshift({ id: crypto.randomUUID(), contactId: q("activityContact").value || null, type: q("activityType").value, note: q("activityNote").value.trim(), at: new Date().toISOString() }));
+bindForm("ticketForm", () => state.tickets.push({ id: crypto.randomUUID(), contactId: q("ticketContact").value || null, title: q("ticketTitle").value.trim(), priority: q("ticketPriority").value, status: q("ticketStatus").value }));
 q("mailForm").addEventListener("submit", sendMail);
 
 q("loginBtn").addEventListener("click", () => q("loginDialog").showModal());
@@ -134,9 +134,67 @@ async function sendMail(event) {
 
 function switchTab(id) { document.querySelectorAll(".tab").forEach((n) => n.classList.remove("active")); navButtons.forEach((n) => n.classList.remove("active")); q(id).classList.add("active"); document.querySelector(`.nav-btn[data-tab="${id}"]`).classList.add("active"); }
 function persistAndRender() { Object.entries({ crm_contacts: state.contacts, crm_leads: state.leads, crm_opportunities: state.opportunities, crm_accounts: state.accounts, crm_projects: state.projects, crm_activities: state.activities, crm_tickets: state.tickets }).forEach(([k, v]) => localStorage.setItem(k, JSON.stringify(v))); render(); }
-function renderCustomer360() { const c = state.contacts.find((x) => x.id === q("customerSelect").value); if (!c) { q("customer360").textContent = "Select a customer to view full profile."; return; } const openTickets = state.tickets.filter((t) => t.status === "Open").length; const activeProjects = state.projects.filter((p) => p.status === "Active").length; q("customer360").innerHTML = `<strong>${c.name}</strong><br>${c.company} • ${c.location}<br>${c.email}${c.secondaryEmail ? `, ${c.secondaryEmail}` : ""}<br>Demographics: ${c.gender}, ${c.age} years<br>Open Tickets: ${openTickets} | Active Projects: ${activeProjects}`; }
+function renderCustomer360() {
+  const c = state.contacts.find((x) => x.id === q("customerSelect").value);
+  if (!c) { q("customer360").textContent = "Select a customer to view full profile."; return; }
+
+  const cid = c.id;
+  const myTickets = state.tickets.filter((t) => t.contactId === cid);
+  const myLeads = state.leads.filter((l) => l.contactId === cid);
+  const myProjects = state.projects.filter((p) => p.contactId === cid);
+  const myActivities = state.activities.filter((a) => a.contactId === cid);
+
+  const openTickets = myTickets.filter((t) => t.status === "Open").length;
+  const inProgressTickets = myTickets.filter((t) => t.status === "In Progress").length;
+  const resolvedTickets = myTickets.filter((t) => t.status === "Resolved").length;
+  const activeProjects = myProjects.filter((p) => p.status === "Active").length;
+  const wonLeads = myLeads.filter((l) => l.stage === "Won").length;
+  const totalLeadValue = myLeads.reduce((s, l) => s + (l.value || 0), 0);
+
+  const ticketRows = myTickets.length
+    ? myTickets.map((t) => `<li>${t.title} — <em>${t.priority}</em> · <strong>${t.status}</strong></li>`).join("")
+    : "<li class='muted'>No tickets linked.</li>";
+
+  const leadRows = myLeads.length
+    ? myLeads.map((l) => `<li>${l.title} — ${l.stage} · ₹${l.value.toLocaleString()}</li>`).join("")
+    : "<li class='muted'>No leads linked.</li>";
+
+  const projectRows = myProjects.length
+    ? myProjects.map((p) => `<li>${p.name} — ${p.status} · PM: ${p.manager}</li>`).join("")
+    : "<li class='muted'>No projects linked.</li>";
+
+  const activityRows = myActivities.length
+    ? myActivities.slice(0, 5).map((a) => `<li><strong>${a.type}</strong>: ${a.note}</li>`).join("")
+    : "<li class='muted'>No activities logged.</li>";
+
+  q("customer360").innerHTML = `
+    <div class="c360-header">
+      <strong class="c360-name">${c.name}</strong>
+      <span class="c360-company">${c.company} · ${c.location}</span>
+    </div>
+    <div class="c360-contact">
+      📧 ${c.email}${c.secondaryEmail ? ` · ${c.secondaryEmail}` : ""}
+      &nbsp;|&nbsp; 📞 ${c.phone || "—"}
+      &nbsp;|&nbsp; 🧑 ${c.gender}, ${c.age} yrs
+    </div>
+    <div class="c360-stats">
+      <div><span>${openTickets}</span><small>Open Tickets</small></div>
+      <div><span>${inProgressTickets}</span><small>In Progress</small></div>
+      <div><span>${resolvedTickets}</span><small>Resolved</small></div>
+      <div><span>${activeProjects}</span><small>Active Projects</small></div>
+      <div><span>${wonLeads}/${myLeads.length}</span><small>Leads Won</small></div>
+      <div><span>₹${totalLeadValue.toLocaleString()}</span><small>Total Lead Value</small></div>
+    </div>
+    <div class="c360-section"><h4>Tickets</h4><ul>${ticketRows}</ul></div>
+    <div class="c360-section"><h4>Leads</h4><ul>${leadRows}</ul></div>
+    <div class="c360-section"><h4>Projects</h4><ul>${projectRows}</ul></div>
+    <div class="c360-section"><h4>Recent Activities</h4><ul>${activityRows}</ul></div>
+  `;
+}
 function render() { const today = new Date(); const in30 = new Date(Date.now() + 30 * 86400000); const renewalsDue = state.accounts.filter((a) => a.renewalDate && new Date(a.renewalDate) >= today && new Date(a.renewalDate) <= in30).length; const open = state.tickets.filter((t) => t.status === "Open").length, progress = state.tickets.filter((t) => t.status === "In Progress").length, resolved = state.tickets.filter((t) => t.status === "Resolved").length; q("contactCount").textContent = state.contacts.length; q("leadCount").textContent = state.leads.length; q("opportunityCount").textContent = state.opportunities.length; q("ticketOpenCount").textContent = open; q("renewalDueCount").textContent = renewalsDue; q("projectActiveCount").textContent = state.projects.filter((p) => p.status === "Active").length; q("ticketInProgressCount").textContent = progress; q("ticketResolvedCount").textContent = resolved;
-q("contactList").innerHTML = state.contacts.map((c) => `<li><strong>${c.name}</strong> — ${c.company}<br>${c.email}</li>`).join(""); q("accountList").innerHTML = state.accounts.map((a) => `<li><strong>${a.name}</strong> (${a.tier})<br>Renewal: ${a.renewalDate}</li>`).join(""); q("leadList").innerHTML = state.leads.map((l) => `<li><strong>${l.title}</strong><br>${l.stage} • ₹${l.value.toLocaleString()}</li>`).join(""); q("opportunityList").innerHTML = state.opportunities.map((o) => `<li><strong>${o.name}</strong><br>₹${o.value.toLocaleString()} @ ${o.probability}%</li>`).join(""); q("weightedForecast").textContent = state.opportunities.reduce((s, o) => s + (o.value * o.probability / 100), 0).toLocaleString(); q("projectList").innerHTML = state.projects.map((p) => `<li><strong>${p.name}</strong><br>${p.status} • PM: ${p.manager}</li>`).join(""); q("activityList").innerHTML = state.activities.slice(0, 8).map((a) => `<li><strong>${a.type}</strong><br>${a.note}</li>`).join(""); const filter = q("ticketFilter").value; const tks = filter === "All" ? state.tickets : state.tickets.filter((t) => t.status === filter); q("ticketList").innerHTML = tks.map((t) => `<li><strong>${t.title}</strong><br>${t.priority} • ${t.status}</li>`).join(""); const total = Math.max(1, state.tickets.length); q("ticketAnalytics").innerHTML = [["Open", open], ["In Progress", progress], ["Resolved", resolved]].map(([l, v]) => `<div class='bar-row'><span>${l}</span><div class='bar'><i style='width:${(v / total) * 100}%'></i></div><b>${v}</b></div>`).join(""); q("customerSelect").innerHTML = `<option value="">Select customer</option>` + state.contacts.map((c) => `<option value="${c.id}">${c.name}</option>`).join(""); renderCustomer360(); }
+q("contactList").innerHTML = state.contacts.map((c) => `<li><strong>${c.name}</strong> — ${c.company}<br>${c.email}</li>`).join(""); q("accountList").innerHTML = state.accounts.map((a) => `<li><strong>${a.name}</strong> (${a.tier})<br>Renewal: ${a.renewalDate}</li>`).join(""); q("leadList").innerHTML = state.leads.map((l) => `<li><strong>${l.title}</strong><br>${l.stage} • ₹${l.value.toLocaleString()}</li>`).join(""); q("opportunityList").innerHTML = state.opportunities.map((o) => `<li><strong>${o.name}</strong><br>₹${o.value.toLocaleString()} @ ${o.probability}%</li>`).join(""); q("weightedForecast").textContent = state.opportunities.reduce((s, o) => s + (o.value * o.probability / 100), 0).toLocaleString(); q("projectList").innerHTML = state.projects.map((p) => `<li><strong>${p.name}</strong><br>${p.status} • PM: ${p.manager}</li>`).join(""); q("activityList").innerHTML = state.activities.slice(0, 8).map((a) => `<li><strong>${a.type}</strong><br>${a.note}</li>`).join(""); const filter = q("ticketFilter").value; const tks = filter === "All" ? state.tickets : state.tickets.filter((t) => t.status === filter); q("ticketList").innerHTML = tks.map((t) => `<li><strong>${t.title}</strong><br>${t.priority} • ${t.status}</li>`).join(""); const total = Math.max(1, state.tickets.length); q("ticketAnalytics").innerHTML = [["Open", open], ["In Progress", progress], ["Resolved", resolved]].map(([l, v]) => `<div class='bar-row'><span>${l}</span><div class='bar'><i style='width:${(v / total) * 100}%'></i></div><b>${v}</b></div>`).join(""); q("customerSelect").innerHTML = `<option value="">Select customer</option>` + state.contacts.map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
+  const contactOptions = '<option value="">Link to Contact (optional)</option>' + state.contacts.map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
+  ["leadContact","projectContact","activityContact","ticketContact"].forEach((id) => { const el = q(id); if (el) el.innerHTML = contactOptions; }); renderCustomer360(); }
 renderSession();
 render();
 checkSmtpApi();

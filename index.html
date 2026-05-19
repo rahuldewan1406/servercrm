@@ -87,6 +87,7 @@
               <input id="leadName" placeholder="Lead Title" required />
               <select id="leadStage" required><option>New</option><option>Qualified</option><option>Proposal</option><option>Won</option><option>Lost</option></select>
               <input id="leadValue" type="number" min="0" placeholder="Lead Value" required />
+              <select id="leadContact"><option value="">Link to Contact (optional)</option></select>
               <button type="submit">Save Lead</button>
             </form>
             <ul id="leadList"></ul>
@@ -112,6 +113,7 @@
               <input id="projectName" placeholder="Project Name" required />
               <select id="projectStatus"><option>Active</option><option>On Hold</option><option>Completed</option></select>
               <input id="projectManager" placeholder="Project Manager" required />
+              <select id="projectContact"><option value="">Link to Contact (optional)</option></select>
               <button type="submit">Add Project</button>
             </form>
             <ul id="projectList"></ul>
@@ -120,6 +122,7 @@
             <form id="activityForm">
               <select id="activityType"><option>Call</option><option>Meeting</option><option>Demo</option><option>Follow-up</option></select>
               <input id="activityNote" placeholder="Activity Note" required />
+              <select id="activityContact"><option value="">Link to Contact (optional)</option></select>
               <button type="submit">Log Activity</button>
             </form>
             <ul id="activityList"></ul>
@@ -147,6 +150,7 @@
               <input id="ticketTitle" placeholder="Ticket title" required />
               <select id="ticketPriority" required><option>Low</option><option>Medium</option><option>High</option></select>
               <select id="ticketStatus" required><option>Open</option><option>In Progress</option><option>Resolved</option></select>
+              <select id="ticketContact"><option value="">Link to Contact (optional)</option></select>
               <button type="submit">Create Ticket</button>
             </form>
             <select id="ticketFilter"><option value="All">All Tickets</option><option value="Open">Open</option><option value="In Progress">In Progress</option><option value="Resolved">Resolved</option></select>

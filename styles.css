@@ -11,3 +11,27 @@ ul{list-style:none;padding:0;margin:0;display:grid;gap:.5rem}li{border:1px solid
 .bars{display:grid;gap:.5rem}.bar-row{display:grid;grid-template-columns:90px 1fr 35px;gap:.5rem;align-items:center}.bar{background:#e2e8f0;border-radius:999px;height:10px;overflow:hidden}.bar i{display:block;background:#2563eb;height:100%}
 .login-dialog{border:none;border-radius:12px;padding:0;max-width:360px;width:90%}.login-form{padding:1rem}.dialog-actions{display:flex;justify-content:flex-end;gap:.5rem}
 @media(max-width:980px){.app-shell{grid-template-columns:1fr}.split,.stats{grid-template-columns:1fr}.topbar{flex-direction:column;align-items:flex-start;gap:.6rem}}
+
+/* ── Customer 360 enhanced layout ── */
+.c360-header { margin-bottom: 8px; }
+.c360-name { font-size: 1.1rem; display: block; }
+.c360-company { color: var(--muted, #666); font-size: .875rem; }
+.c360-contact { font-size: .85rem; color: var(--muted, #555); margin-bottom: 12px; line-height: 1.8; }
+.c360-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.c360-stats > div {
+  background: var(--surface, #f5f5f5);
+  border-radius: 6px;
+  padding: 8px 6px;
+  text-align: center;
+}
+.c360-stats span { display: block; font-size: 1.3rem; font-weight: 700; }
+.c360-stats small { font-size: .7rem; color: var(--muted, #666); }
+.c360-section { margin-top: 12px; }
+.c360-section h4 { margin: 0 0 4px; font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted, #666); }
+.c360-section ul { margin: 0; padding-left: 16px; font-size: .85rem; }
+.c360-section li { margin-bottom: 3px; }
