@@ -23,6 +23,17 @@ const state = {
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Chat state (declared here so renderSession can access it) ──────────────────
+const chatState = {
+  open:          false,
+  fullscreen:    false,
+  activePhone:   null,
+  activeContact: null,
+  filter:        'all',
+  threads:       JSON.parse(localStorage.getItem('crm_chat_threads') || '{}'),
+};
+
+
 const q = id => document.getElementById(id);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isEmail  = a => EMAIL_RE.test(String(a).trim());
@@ -1264,7 +1275,8 @@ async function checkLoginApiStatus() {
   const text = q('loginApiText');
   try {
     const r = await fetch(`${API}/health`, {signal: AbortSignal.timeout(3000)});
-    if (r.ok) {
+    // 200 = public health ok, 401 = server running but needs auth (also fine for login page)
+    if (r.ok || r.status === 401) {
       if(dot)  dot.className='api-dot online';
       if(text) text.textContent='API server online (port 3002)';
     } else throw new Error('not ok');
@@ -2640,16 +2652,7 @@ function checkPortalToken() {
 //  Contact-phone-number based internal messaging
 // ══════════════════════════════════════════════════════════════════
 
-// ── State ─────────────────────────────────────────────────────────
-const chatState = {
-  open:          false,
-  fullscreen:    false,
-  activePhone:   null,   // phone number = thread ID
-  activeContact: null,
-  filter:        'all',
-  threads:       JSON.parse(localStorage.getItem('crm_chat_threads') || '{}'),
-  // threads: { [phone]: { messages: [...], lastRead: timestamp } }
-};
+// chatState declared at top of file
 
 const QUICK_REPLIES = [
   'Thank you for reaching out! We will get back to you shortly.',

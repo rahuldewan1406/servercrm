@@ -40,11 +40,11 @@ app.use(cors({
 app.use(express.json({ limit: '1mb' }));
 
 // ── Routes ────────────────────────────────────────────────────────────────────
+// Public health check MUST be before resourcesRouter (which has auth middleware)
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
 app.use('/auth',  authRouter);
 app.use('/users', usersRouter);
 app.use('/',      resourcesRouter);
-
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 // ── Global error handler ──────────────────────────────────────────────────────
 app.use((err, req, res, next) => {
