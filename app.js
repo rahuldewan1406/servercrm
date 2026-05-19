@@ -128,7 +128,7 @@ async function login(e) {
     renderSession(); await loadAllData(); renderAll();
     // Show chat button after login
     const chatWrap = q('chatBellWrap');
-    if (chatWrap) chatWrap.style.display='flex';
+    if (chatWrap) { chatWrap.classList.remove('hidden'); chatWrap.style.display='flex'; }
     initChat();
   } catch {
     if (errEl) errEl.textContent = 'Cannot reach API server on port 3002. Please ensure the backend is running.';
@@ -334,7 +334,13 @@ function renderSession() {
   // Show/hide chat button based on login state
   const chatWrap = q('chatBellWrap');
   if (chatWrap) {
-    chatWrap.style.display = li ? 'flex' : 'none';
+    if (li) {
+      chatWrap.classList.remove('hidden');
+      chatWrap.style.display = 'flex';
+    } else {
+      chatWrap.classList.add('hidden');
+      chatWrap.style.display = 'none';
+    }
   }
   if (li) {
     q('userBadge').textContent = state.session.name;
@@ -2683,12 +2689,12 @@ function toggleChat() {
   if (!panel) { console.warn('chatMessenger not found'); return; }
   chatState.open = !chatState.open;
   if (chatState.open) {
-    panel.style.display = 'flex';
     panel.classList.remove('hidden');
+    panel.style.display = 'flex';
     setTimeout(()=>{ renderChatList(); updateChatBadge(); }, 10);
   } else {
     panel.classList.add('hidden');
-    setTimeout(()=>{ panel.style.display='none'; }, 250);
+    panel.style.display = 'none';
   }
 }
 
