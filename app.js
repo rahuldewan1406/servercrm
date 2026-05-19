@@ -150,25 +150,67 @@ q('mailForm').addEventListener('submit', sendMail);
 // Contact form
 q('contactForm').addEventListener('submit', async e => {
   e.preventDefault();
-  if (!state.session) { alert('Please log in first.'); return; }
-  const ok = await apiCreate('contacts', { name:q('name').value.trim(), email:q('email').value.trim(), secondaryEmail:q('secondaryEmail').value.trim(), phone:q('phone').value.trim(), company:q('company').value.trim(), gender:q('gender').value, age:Number(q('age').value), location:q('location').value.trim() });
-  if (ok) { e.target.reset(); closeModal('contactModal'); await apiFetch('/contacts').then(r=>r&&r.ok?r.json().then(d=>state.contacts=d):null); renderAll(); }
+  e.stopPropagation();
+  const errEl = q('contactFormError');
+  if (errEl) errEl.textContent = '';
+  if (!state.session) {
+    if (errEl) errEl.textContent = 'You must be logged in to add contacts.';
+    else alert('Please log in first.');
+    return;
+  }
+  const name    = q('name').value.trim();
+  const email   = q('email').value.trim();
+  const phone   = q('phone').value.trim();
+  const company = q('company').value.trim();
+  if (!name || !email) {
+    if (errEl) errEl.textContent = 'Full Name and Primary Email are required.';
+    return;
+  }
+  if (!isEmail(email)) {
+    if (errEl) errEl.textContent = 'Please enter a valid email address.';
+    return;
+  }
+  const btn = q('saveContactBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  const ok = await apiCreate('contacts', {
+    name, email,
+    secondaryEmail: q('secondaryEmail').value.trim(),
+    phone, company,
+    gender:   q('gender').value,
+    age:      Number(q('age').value) || null,
+    location: q('location').value.trim(),
+  });
+  if (btn) { btn.disabled = false; btn.textContent = 'Save Contact'; }
+  if (ok) {
+    e.target.reset();
+    closeModal('contactModal');
+    const r = await apiFetch('/contacts');
+    if (r && r.ok) state.contacts = await r.json();
+    renderAll();
+  } else {
+    if (errEl) errEl.textContent = 'Failed to save. Check that the API server is running on port 3002.';
+  }
 });
 
 // Lead form
 q('leadForm').addEventListener('submit', async e => {
-  e.preventDefault();
+  e.preventDefault(); e.stopPropagation();
   if (!state.session) { alert('Please log in first.'); return; }
-  const ok = await apiCreate('leads', { title:q('leadName').value.trim(), stage:q('leadStage').value, value:Number(q('leadValue').value), contactId:q('leadContact').value||null });
-  if (ok) { e.target.reset(); closeModal('leadModal'); await apiFetch('/leads').then(r=>r&&r.ok?r.json().then(d=>state.leads=d):null); renderAll(); }
+  const title = q('leadName').value.trim();
+  const value = Number(q('leadValue').value);
+  if (!title) { alert('Lead title is required.'); return; }
+  const ok = await apiCreate('leads', { title, stage:q('leadStage').value, value, contactId:q('leadContact').value||null });
+  if (ok) { e.target.reset(); closeModal('leadModal'); const r=await apiFetch('/leads'); if(r&&r.ok) state.leads=await r.json(); renderAll(); }
 });
 
 // Ticket form
 q('ticketForm').addEventListener('submit', async e => {
-  e.preventDefault();
+  e.preventDefault(); e.stopPropagation();
   if (!state.session) { alert('Please log in first.'); return; }
-  const ok = await apiCreate('tickets', { title:q('ticketTitle').value.trim(), priority:q('ticketPriority').value, status:q('ticketStatus').value, contactId:q('ticketContact').value||null });
-  if (ok) { e.target.reset(); closeModal('ticketModal'); await apiFetch('/tickets').then(r=>r&&r.ok?r.json().then(d=>state.tickets=d):null); renderAll(); }
+  const title = q('ticketTitle').value.trim();
+  if (!title) { alert('Ticket title is required.'); return; }
+  const ok = await apiCreate('tickets', { title, priority:q('ticketPriority').value, status:q('ticketStatus').value, contactId:q('ticketContact').value||null });
+  if (ok) { e.target.reset(); closeModal('ticketModal'); const r=await apiFetch('/tickets'); if(r&&r.ok) state.tickets=await r.json(); renderAll(); }
 });
 
 // Local-storage forms

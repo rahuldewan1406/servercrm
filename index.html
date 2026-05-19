@@ -365,13 +365,14 @@
       <label>Secondary Email<input id="secondaryEmail" placeholder="optional" /></label>
       <label>Phone<input id="phone" placeholder="+91 98765 43210" required /></label>
       <label>Company<input id="company" placeholder="Acme Corp" required /></label>
-      <label>Gender<select id="gender" required><option value="">—</option><option>Female</option><option>Male</option><option>Other</option></select></label>
+      <label>Gender<select id="gender"><option value="">—</option><option>Female</option><option>Male</option><option>Other</option></select></label>
       <label>Age<input id="age" type="number" min="1" max="120" placeholder="30" required /></label>
       <label class="span2">Location<input id="location" placeholder="Mumbai, India" required /></label>
       <div class="modal-footer span2">
         <button type="button" class="btn-modal-secondary" onclick="closeModal('contactModal')">Cancel</button>
-        <button type="submit" class="btn-modal-primary">Save Contact</button>
+        <button type="submit" class="btn-modal-primary" id="saveContactBtn">Save Contact</button>
       </div>
+      <p id="contactFormError" style="color:var(--rose);font-size:.8rem;margin:.5rem 1.25rem 0;min-height:1rem"></p>
     </form>
   </dialog>
 
