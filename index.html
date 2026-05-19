@@ -3,195 +3,530 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Organisation CRM</title>
+  <title>OrgCRM — Enterprise</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+
+  <!-- ── Top Bar ── -->
   <header class="topbar">
-    <div>
-      <h1>Organisation CRM</h1>
-      <p>CRM modules for IT companies: sales, delivery, support, and renewals.</p>
+    <div class="topbar-brand">
+      <div class="brand-icon">◈</div>
+      <div>
+        <div class="brand-name">OrgCRM</div>
+        <div class="brand-sub">Enterprise Edition</div>
+      </div>
     </div>
-    <div class="top-actions">
-      <span id="userBadge" class="user-badge">Guest</span><span id="roleBadge" class="role-badge hidden"></span>
-      <button id="loginBtn" class="btn-outline">Login</button>
-      <button id="logoutBtn" class="btn-danger hidden">Logout</button>
+    <nav class="topbar-nav">
+      <button class="tnav active" data-tab="dashboard">Dashboard</button>
+      <button class="tnav" data-tab="customers">Accounts</button>
+      <button class="tnav" data-tab="sales">Sales</button>
+      <button class="tnav" data-tab="projects">Projects</button>
+      <button class="tnav" data-tab="support">Support</button>
+      <button class="tnav" data-tab="email">Email</button>
+    </nav>
+    <div class="topbar-user">
+      <span id="smtpDot" class="status-dot" title="SMTP Status"></span>
+      <div id="userChip" class="user-chip hidden">
+        <div class="user-avatar" id="userAvatar">A</div>
+        <div class="user-info">
+          <span id="userBadge">Guest</span>
+          <span id="roleBadge" class="role-pill"></span>
+        </div>
+      </div>
+      <button id="loginBtn" class="btn-primary-sm">Sign In</button>
+      <button id="logoutBtn" class="btn-ghost-sm hidden">Sign Out</button>
     </div>
   </header>
 
-  <main class="app-shell">
-    <aside class="sidebar card">
-      <h3>Modules</h3>
-      <button class="nav-btn active" data-tab="dashboard">Dashboard</button>
-      <button class="nav-btn" data-tab="customers">Customers</button>
-      <button class="nav-btn" data-tab="sales">Sales Pipeline</button>
-      <button class="nav-btn" data-tab="projects">Projects & SLA</button>
-      <button class="nav-btn" data-tab="email">Email Center</button>
-      <button class="nav-btn" data-tab="support">Support Analytics</button>
-    </aside>
+  <main class="workspace">
 
-    <section class="content">
-      <section id="dashboard" class="tab card active">
-        <h2>Executive Overview</h2>
-        <div class="stats">
-          <div><span id="contactCount">0</span><small>Contacts</small></div>
-          <div><span id="leadCount">0</span><small>Leads</small></div>
-          <div><span id="opportunityCount">0</span><small>Opportunities</small></div>
-          <div><span id="ticketOpenCount">0</span><small>Open Tickets</small></div>
-        </div>
-        <div class="stats compact">
-          <div><span id="renewalDueCount">0</span><small>Renewals Due (30d)</small></div>
-          <div><span id="projectActiveCount">0</span><small>Active Projects</small></div>
-        </div>
-      </section>
+    <!-- ══════════════════════════════════════════════════
+         DASHBOARD
+    ══════════════════════════════════════════════════ -->
+    <section id="dashboard" class="page active">
+      <div class="page-header">
+        <h1>Executive Dashboard</h1>
+        <span class="page-sub" id="dashDate"></span>
+      </div>
 
-      <section id="customers" class="tab card">
-        <div class="split">
-          <div>
-            <h2>Customer & Demographics</h2>
-            <form id="contactForm">
-              <input id="name" placeholder="Full Name" required />
-              <input id="email" type="email" placeholder="Primary Email" required />
-              <input id="secondaryEmail" placeholder="Secondary Email" />
-              <input id="phone" placeholder="Phone" required />
-              <input id="company" placeholder="Company" required />
-              <select id="gender" required><option value="">Gender</option><option>Female</option><option>Male</option><option>Other</option></select>
-              <input id="age" type="number" min="1" max="120" placeholder="Age" required />
-              <input id="location" placeholder="Location" required />
-              <button type="submit">Save Contact</button>
-            </form>
-          </div>
-          <div>
-            <h2>Customer 360°</h2>
-            <select id="customerSelect"><option value="">Select customer</option></select>
-            <div id="customer360" class="panel-muted">Select a customer to view full profile.</div>
+      <!-- KPI Row -->
+      <div class="kpi-row">
+        <div class="kpi-card kpi-blue">
+          <div class="kpi-icon">👥</div>
+          <div class="kpi-body">
+            <div class="kpi-val" id="contactCount">0</div>
+            <div class="kpi-label">Total Contacts</div>
           </div>
         </div>
-        <h3>Accounts</h3>
-        <form id="accountForm" class="inline-form">
-          <input id="accountName" placeholder="Account Name" required />
-          <select id="accountTier"><option>SMB</option><option>Mid-Market</option><option>Enterprise</option></select>
-          <input id="renewalDate" type="date" required />
-          <button type="submit">Add Account</button>
-        </form>
-        <ul id="accountList"></ul>
-        <h3>Contacts</h3>
-        <ul id="contactList"></ul>
-      </section>
+        <div class="kpi-card kpi-violet">
+          <div class="kpi-icon">🔥</div>
+          <div class="kpi-body">
+            <div class="kpi-val" id="leadCount">0</div>
+            <div class="kpi-label">Active Leads</div>
+          </div>
+        </div>
+        <div class="kpi-card kpi-green">
+          <div class="kpi-icon">💰</div>
+          <div class="kpi-body">
+            <div class="kpi-val" id="opportunityCount">0</div>
+            <div class="kpi-label">Opportunities</div>
+          </div>
+        </div>
+        <div class="kpi-card kpi-amber">
+          <div class="kpi-icon">🎫</div>
+          <div class="kpi-body">
+            <div class="kpi-val" id="ticketOpenCount">0</div>
+            <div class="kpi-label">Open Tickets</div>
+          </div>
+        </div>
+        <div class="kpi-card kpi-teal">
+          <div class="kpi-icon">📁</div>
+          <div class="kpi-body">
+            <div class="kpi-val" id="projectActiveCount">0</div>
+            <div class="kpi-label">Active Projects</div>
+          </div>
+        </div>
+        <div class="kpi-card kpi-rose">
+          <div class="kpi-icon">📅</div>
+          <div class="kpi-body">
+            <div class="kpi-val" id="renewalDueCount">0</div>
+            <div class="kpi-label">Renewals (30d)</div>
+          </div>
+        </div>
+      </div>
 
-      <section id="sales" class="tab card">
-        <h2>Sales Pipeline & Forecast</h2>
-        <div class="split">
-          <div>
-            <form id="leadForm">
-              <input id="leadName" placeholder="Lead Title" required />
-              <select id="leadStage" required><option>New</option><option>Qualified</option><option>Proposal</option><option>Won</option><option>Lost</option></select>
-              <input id="leadValue" type="number" min="0" placeholder="Lead Value" required />
-              <select id="leadContact"><option value="">Link to Contact (optional)</option></select>
-              <button type="submit">Save Lead</button>
-            </form>
-            <ul id="leadList"></ul>
-          </div>
-          <div>
-            <form id="opportunityForm">
-              <input id="oppName" placeholder="Opportunity Name" required />
-              <input id="oppValue" type="number" min="0" placeholder="Deal Value" required />
-              <select id="oppProbability"><option value="25">25%</option><option value="50">50%</option><option value="75">75%</option><option value="90">90%</option></select>
-              <button type="submit">Add Opportunity</button>
-            </form>
-            <ul id="opportunityList"></ul>
-            <p><strong>Weighted Forecast:</strong> ₹<span id="weightedForecast">0</span></p>
+      <!-- Dashboard body -->
+      <div class="dash-grid">
+        <div class="dash-card">
+          <div class="dash-card-header"><h3>Pipeline Forecast</h3></div>
+          <div id="pipelineChart" class="pipeline-chart"></div>
+          <div class="forecast-total">Weighted: <strong>₹<span id="weightedForecast">0</span></strong></div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-card-header"><h3>Ticket Status</h3></div>
+          <div id="ticketDonut" class="donut-wrap">
+            <svg viewBox="0 0 120 120" class="donut-svg" id="donutSvg"></svg>
+            <div class="donut-legend" id="donutLegend"></div>
           </div>
         </div>
-      </section>
-
-      <section id="projects" class="tab card">
-        <h2>Projects, Activities & SLA</h2>
-        <div class="split">
-          <div>
-            <form id="projectForm">
-              <input id="projectName" placeholder="Project Name" required />
-              <select id="projectStatus"><option>Active</option><option>On Hold</option><option>Completed</option></select>
-              <input id="projectManager" placeholder="Project Manager" required />
-              <select id="projectContact"><option value="">Link to Contact (optional)</option></select>
-              <button type="submit">Add Project</button>
-            </form>
-            <ul id="projectList"></ul>
-          </div>
-          <div>
-            <form id="activityForm">
-              <select id="activityType"><option>Call</option><option>Meeting</option><option>Demo</option><option>Follow-up</option></select>
-              <input id="activityNote" placeholder="Activity Note" required />
-              <select id="activityContact"><option value="">Link to Contact (optional)</option></select>
-              <button type="submit">Log Activity</button>
-            </form>
-            <ul id="activityList"></ul>
-          </div>
+        <div class="dash-card">
+          <div class="dash-card-header"><h3>Recent Activity</h3></div>
+          <ul id="activityFeed" class="activity-feed"></ul>
         </div>
-      </section>
-
-      <section id="email" class="tab card">
-        <h2>Email Center with SMTP</h2>
-        <form id="mailForm">
-          <select id="mailMode"><option value="single">Single Email</option><option value="multi">Multiple Emails</option><option value="bulk">Bulk to all contacts</option></select>
-          <input id="mailTo" placeholder="Recipient(s), comma separated" />
-          <input id="mailSubject" placeholder="Subject" required />
-          <textarea id="mailBody" rows="5" placeholder="Message" required></textarea>
-          <button type="submit">Send via SMTP</button>
-        </form>
-        <p id="smtpStatus" class="muted"></p>
-        <p id="mailStatus" class="muted"></p>
-      </section>
-      <section id="support" class="tab card">
-        <h2>Interactive Ticket Dashboard</h2>
-        <div class="split">
-          <div>
-            <form id="ticketForm">
-              <input id="ticketTitle" placeholder="Ticket title" required />
-              <select id="ticketPriority" required><option>Low</option><option>Medium</option><option>High</option></select>
-              <select id="ticketStatus" required><option>Open</option><option>In Progress</option><option>Resolved</option></select>
-              <select id="ticketContact"><option value="">Link to Contact (optional)</option></select>
-              <button type="submit">Create Ticket</button>
-            </form>
-            <select id="ticketFilter"><option value="All">All Tickets</option><option value="Open">Open</option><option value="In Progress">In Progress</option><option value="Resolved">Resolved</option></select>
-            <ul id="ticketList"></ul>
-          </div>
-          <div>
-            <h3>Analytics</h3>
-            <div class="stats compact"><div><span id="ticketInProgressCount">0</span><small>In Progress</small></div><div><span id="ticketResolvedCount">0</span><small>Resolved</small></div></div>
-            <div id="ticketAnalytics" class="bars"></div>
-          </div>
+        <div class="dash-card">
+          <div class="dash-card-header"><h3>Projects at a Glance</h3></div>
+          <div id="dashProjects" class="dash-projects"></div>
         </div>
-      </section>
+      </div>
     </section>
-  </main>
 
-  <dialog id="loginDialog" class="login-dialog">
-    <form id="loginForm" method="dialog" class="login-form">
-      <h3>Login</h3>
-      <input id="loginEmail" type="email" placeholder="Email" required />
-      <input id="loginPassword" type="password" placeholder="Password" required />
-      <p class="muted small">Default admin: <strong>admin@crm.local</strong> / <strong>admin123</strong><br>Requires API server on port 3002.</p>
-      <div class="dialog-actions">
-        <button type="button" id="closeLogin" class="btn-outline dark">Cancel</button>
-        <button type="submit">Sign In</button>
+    <!-- ══════════════════════════════════════════════════
+         ACCOUNTS / CUSTOMERS
+    ══════════════════════════════════════════════════ -->
+    <section id="customers" class="page">
+      <div class="page-header">
+        <h1>Accounts & Contacts</h1>
+        <button class="btn-primary-sm" onclick="openModal('contactModal')">+ New Contact</button>
       </div>
-      <p id="loginStatus" class="muted"></p>
+
+      <div class="two-col">
+        <!-- Contact list -->
+        <div class="panel">
+          <div class="panel-toolbar">
+            <input id="contactSearch" class="search-box" placeholder="🔍  Search contacts…" oninput="filterContacts()" />
+          </div>
+          <ul id="contactList" class="record-list"></ul>
+        </div>
+
+        <!-- Customer 360 -->
+        <div class="panel">
+          <h3 class="panel-title">Customer 360°</h3>
+          <select id="customerSelect" class="full-select"><option value="">Select a contact…</option></select>
+          <div id="customer360" class="c360-panel">
+            <div class="c360-empty">Select a contact to view their full profile.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Accounts -->
+      <div class="section-divider">Accounts</div>
+      <div class="panel">
+        <div class="panel-toolbar">
+          <button class="btn-primary-sm" onclick="openModal('accountModal')">+ New Account</button>
+        </div>
+        <ul id="accountList" class="record-list"></ul>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════
+         SALES PIPELINE
+    ══════════════════════════════════════════════════ -->
+    <section id="sales" class="page">
+      <div class="page-header">
+        <h1>Sales Pipeline</h1>
+        <div class="btn-group">
+          <button class="btn-primary-sm" onclick="openModal('leadModal')">+ New Lead</button>
+          <button class="btn-secondary-sm" onclick="openModal('oppModal')">+ Opportunity</button>
+        </div>
+      </div>
+
+      <!-- Kanban board -->
+      <div class="kanban-header"><h3>Lead Pipeline (Kanban)</h3></div>
+      <div class="kanban-board" id="kanbanBoard">
+        <div class="kanban-col" data-stage="New">
+          <div class="kanban-col-title"><span class="stage-dot stage-new"></span>New</div>
+          <div class="kanban-cards" id="kStageNew"></div>
+        </div>
+        <div class="kanban-col" data-stage="Qualified">
+          <div class="kanban-col-title"><span class="stage-dot stage-qualified"></span>Qualified</div>
+          <div class="kanban-cards" id="kStageQualified"></div>
+        </div>
+        <div class="kanban-col" data-stage="Proposal">
+          <div class="kanban-col-title"><span class="stage-dot stage-proposal"></span>Proposal</div>
+          <div class="kanban-cards" id="kStageProposal"></div>
+        </div>
+        <div class="kanban-col" data-stage="Won">
+          <div class="kanban-col-title"><span class="stage-dot stage-won"></span>Won</div>
+          <div class="kanban-cards" id="kStageWon"></div>
+        </div>
+        <div class="kanban-col" data-stage="Lost">
+          <div class="kanban-col-title"><span class="stage-dot stage-lost"></span>Lost</div>
+          <div class="kanban-cards" id="kStageLost"></div>
+        </div>
+      </div>
+
+      <!-- Opportunities -->
+      <div class="section-divider">Opportunities</div>
+      <ul id="opportunityList" class="record-list opp-list"></ul>
+      <div class="forecast-bar">
+        <span>Weighted Pipeline Forecast:</span>
+        <strong>₹<span id="weightedForecast2">0</span></strong>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════
+         PROJECTS  (full PM tool)
+    ══════════════════════════════════════════════════ -->
+    <section id="projects" class="page">
+      <div class="page-header">
+        <h1>Project Management</h1>
+        <div class="btn-group">
+          <button class="btn-primary-sm" onclick="openModal('projectModal')">+ New Project</button>
+          <button class="btn-secondary-sm" onclick="openModal('milestoneModal')">+ Milestone</button>
+          <button class="btn-secondary-sm" onclick="openModal('taskModal')">+ Task</button>
+          <button class="btn-ghost-sm" onclick="openModal('activityModal')">+ Log Activity</button>
+        </div>
+      </div>
+
+      <!-- View toggle -->
+      <div class="view-toggle">
+        <button class="vtab active" data-view="board" onclick="switchProjectView('board')">📋 Board</button>
+        <button class="vtab" data-view="list" onclick="switchProjectView('list')">📄 List</button>
+        <button class="vtab" data-view="gantt" onclick="switchProjectView('gantt')">📊 Timeline</button>
+      </div>
+
+      <!-- Project Board View -->
+      <div id="projectBoardView" class="project-view active">
+        <div class="project-kanban" id="projectKanban">
+          <div class="project-col">
+            <div class="project-col-title">🟡 Planning</div>
+            <div class="project-cards" id="pColPlanning"></div>
+          </div>
+          <div class="project-col">
+            <div class="project-col-title">🔵 Active</div>
+            <div class="project-cards" id="pColActive"></div>
+          </div>
+          <div class="project-col">
+            <div class="project-col-title">🟠 On Hold</div>
+            <div class="project-cards" id="pColOnHold"></div>
+          </div>
+          <div class="project-col">
+            <div class="project-col-title">✅ Completed</div>
+            <div class="project-cards" id="pColCompleted"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Project List View -->
+      <div id="projectListView" class="project-view">
+        <table class="data-table" id="projectTable">
+          <thead>
+            <tr><th>Project</th><th>Status</th><th>Manager</th><th>Progress</th><th>Due Date</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="projectTableBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Gantt / Timeline View -->
+      <div id="projectGanttView" class="project-view">
+        <div class="gantt-wrap" id="ganttWrap"></div>
+      </div>
+
+      <!-- Tasks & Milestones Panel -->
+      <div class="section-divider">Tasks & Milestones</div>
+      <div class="two-col">
+        <div class="panel">
+          <div class="panel-toolbar">
+            <select id="taskProjectFilter" class="filter-select" onchange="renderTasks()">
+              <option value="">All Projects</option>
+            </select>
+            <select id="taskStatusFilter" class="filter-select" onchange="renderTasks()">
+              <option value="">All Statuses</option>
+              <option>To Do</option><option>In Progress</option><option>Done</option><option>Blocked</option>
+            </select>
+          </div>
+          <ul id="taskList" class="task-list"></ul>
+        </div>
+        <div class="panel">
+          <h4 class="panel-title">Milestones</h4>
+          <ul id="milestoneList" class="milestone-list"></ul>
+          <div class="section-divider" style="margin-top:1rem">Activity Log</div>
+          <ul id="activityList" class="activity-feed compact"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════
+         SUPPORT
+    ══════════════════════════════════════════════════ -->
+    <section id="support" class="page">
+      <div class="page-header">
+        <h1>Support Center</h1>
+        <button class="btn-primary-sm" onclick="openModal('ticketModal')">+ New Ticket</button>
+      </div>
+      <div class="kpi-row kpi-row-sm">
+        <div class="kpi-card kpi-amber"><div class="kpi-body"><div class="kpi-val" id="sOpenCount">0</div><div class="kpi-label">Open</div></div></div>
+        <div class="kpi-card kpi-blue"><div class="kpi-body"><div class="kpi-val" id="sProgressCount">0</div><div class="kpi-label">In Progress</div></div></div>
+        <div class="kpi-card kpi-green"><div class="kpi-body"><div class="kpi-val" id="sResolvedCount">0</div><div class="kpi-label">Resolved</div></div></div>
+      </div>
+      <div class="two-col">
+        <div class="panel">
+          <div class="panel-toolbar">
+            <select id="ticketFilter" class="filter-select" onchange="renderTickets()">
+              <option value="All">All</option><option>Open</option><option>In Progress</option><option>Resolved</option>
+            </select>
+            <select id="ticketPriorityFilter" class="filter-select" onchange="renderTickets()">
+              <option value="All">All Priorities</option><option>High</option><option>Medium</option><option>Low</option>
+            </select>
+          </div>
+          <ul id="ticketList" class="ticket-list"></ul>
+        </div>
+        <div class="panel">
+          <h4 class="panel-title">Analytics</h4>
+          <div id="ticketAnalytics" class="bars"></div>
+          <div id="ticketSLAPanel" class="sla-panel"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════
+         EMAIL CENTER
+    ══════════════════════════════════════════════════ -->
+    <section id="email" class="page">
+      <div class="page-header"><h1>Email Center</h1></div>
+      <div class="two-col">
+        <div class="panel">
+          <h4 class="panel-title">Compose</h4>
+          <form id="mailForm" class="mail-form">
+            <select id="mailMode">
+              <option value="single">Single Recipient</option>
+              <option value="multi">Multiple Recipients</option>
+              <option value="bulk">Bulk — All Contacts</option>
+            </select>
+            <input id="mailTo" placeholder="To: email address(es)" />
+            <input id="mailSubject" placeholder="Subject" required />
+            <textarea id="mailBody" rows="8" placeholder="Message body…" required></textarea>
+            <button type="submit" class="btn-send">Send via SMTP ↗</button>
+          </form>
+          <div id="mailStatus" class="status-banner hidden"></div>
+        </div>
+        <div class="panel">
+          <h4 class="panel-title">SMTP Status</h4>
+          <div id="smtpStatusPanel" class="smtp-status-panel"></div>
+          <div class="panel-title" style="margin-top:1.5rem">Quick Stats</div>
+          <div class="mail-stats">
+            <div><strong id="contactEmailCount">0</strong><span>Contacts with email</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main><!-- end workspace -->
+
+  <!-- ══════════════════════════════════════════════════
+       MODALS
+  ══════════════════════════════════════════════════ -->
+
+  <!-- Login -->
+  <dialog id="loginDialog" class="modal-dialog">
+    <div class="modal-header"><h3>Sign In to OrgCRM</h3><button class="modal-close" onclick="this.closest('dialog').close()">✕</button></div>
+    <form id="loginForm" class="modal-body">
+      <label>Email<input id="loginEmail" type="email" placeholder="admin@crm.local" required /></label>
+      <label>Password<input id="loginPassword" type="password" placeholder="••••••••" required /></label>
+      <p class="hint-text">Default: admin@crm.local / admin123 · API on port 3002</p>
+      <button type="submit" class="btn-modal-primary">Sign In</button>
+      <p id="loginStatus" class="form-error"></p>
     </form>
   </dialog>
 
+  <!-- Contact Modal -->
+  <dialog id="contactModal" class="modal-dialog">
+    <div class="modal-header"><h3>New Contact</h3><button class="modal-close" onclick="closeModal('contactModal')">✕</button></div>
+    <form id="contactForm" class="modal-body modal-grid">
+      <label class="span2">Full Name<input id="name" placeholder="Jane Doe" required /></label>
+      <label>Primary Email<input id="email" type="email" placeholder="jane@company.com" required /></label>
+      <label>Secondary Email<input id="secondaryEmail" placeholder="optional" /></label>
+      <label>Phone<input id="phone" placeholder="+91 98765 43210" required /></label>
+      <label>Company<input id="company" placeholder="Acme Corp" required /></label>
+      <label>Gender<select id="gender" required><option value="">—</option><option>Female</option><option>Male</option><option>Other</option></select></label>
+      <label>Age<input id="age" type="number" min="1" max="120" placeholder="30" required /></label>
+      <label class="span2">Location<input id="location" placeholder="Mumbai, India" required /></label>
+      <div class="modal-footer span2">
+        <button type="button" class="btn-modal-secondary" onclick="closeModal('contactModal')">Cancel</button>
+        <button type="submit" class="btn-modal-primary">Save Contact</button>
+      </div>
+    </form>
+  </dialog>
 
-  <!-- Edit Dialog -->
-  <dialog id="editDialog" class="edit-dialog">
-    <form id="editDialogForm" class="edit-form">
-      <h3 id="editDialogTitle">Edit</h3>
+  <!-- Account Modal -->
+  <dialog id="accountModal" class="modal-dialog">
+    <div class="modal-header"><h3>New Account</h3><button class="modal-close" onclick="closeModal('accountModal')">✕</button></div>
+    <form id="accountForm" class="modal-body">
+      <label>Account Name<input id="accountName" placeholder="Acme Corp" required /></label>
+      <label>Tier<select id="accountTier"><option>SMB</option><option>Mid-Market</option><option>Enterprise</option></select></label>
+      <label>Renewal Date<input id="renewalDate" type="date" required /></label>
+      <div class="modal-footer">
+        <button type="button" class="btn-modal-secondary" onclick="closeModal('accountModal')">Cancel</button>
+        <button type="submit" class="btn-modal-primary">Add Account</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Lead Modal -->
+  <dialog id="leadModal" class="modal-dialog">
+    <div class="modal-header"><h3>New Lead</h3><button class="modal-close" onclick="closeModal('leadModal')">✕</button></div>
+    <form id="leadForm" class="modal-body">
+      <label>Lead Title<input id="leadName" placeholder="Enterprise Deal – Acme" required /></label>
+      <label>Stage<select id="leadStage" required><option>New</option><option>Qualified</option><option>Proposal</option><option>Won</option><option>Lost</option></select></label>
+      <label>Value (₹)<input id="leadValue" type="number" min="0" placeholder="500000" required /></label>
+      <label>Link to Contact<select id="leadContact"><option value="">— None —</option></select></label>
+      <div class="modal-footer">
+        <button type="button" class="btn-modal-secondary" onclick="closeModal('leadModal')">Cancel</button>
+        <button type="submit" class="btn-modal-primary">Save Lead</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Opportunity Modal -->
+  <dialog id="oppModal" class="modal-dialog">
+    <div class="modal-header"><h3>New Opportunity</h3><button class="modal-close" onclick="closeModal('oppModal')">✕</button></div>
+    <form id="opportunityForm" class="modal-body">
+      <label>Opportunity Name<input id="oppName" placeholder="Q3 Expansion – Acme" required /></label>
+      <label>Deal Value (₹)<input id="oppValue" type="number" min="0" placeholder="1000000" required /></label>
+      <label>Probability<select id="oppProbability"><option value="25">25%</option><option value="50">50%</option><option value="75">75%</option><option value="90">90%</option></select></label>
+      <div class="modal-footer">
+        <button type="button" class="btn-modal-secondary" onclick="closeModal('oppModal')">Cancel</button>
+        <button type="submit" class="btn-modal-primary">Add Opportunity</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Project Modal -->
+  <dialog id="projectModal" class="modal-dialog modal-lg">
+    <div class="modal-header"><h3>New Project</h3><button class="modal-close" onclick="closeModal('projectModal')">✕</button></div>
+    <form id="projectForm" class="modal-body modal-grid">
+      <label class="span2">Project Name<input id="projectName" placeholder="Website Redesign" required /></label>
+      <label>Status<select id="projectStatus"><option>Planning</option><option>Active</option><option>On Hold</option><option>Completed</option></select></label>
+      <label>Priority<select id="projectPriority"><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></label>
+      <label>Project Manager<input id="projectManager" placeholder="Rahul Dewan" required /></label>
+      <label>Start Date<input id="projectStartDate" type="date" /></label>
+      <label>Due Date<input id="projectDueDate" type="date" /></label>
+      <label>Budget (₹)<input id="projectBudget" type="number" min="0" placeholder="0" /></label>
+      <label class="span2">Link to Contact<select id="projectContact"><option value="">— None —</option></select></label>
+      <label class="span2">Description<textarea id="projectDesc" rows="3" placeholder="Project scope and objectives…"></textarea></label>
+      <div class="modal-footer span2">
+        <button type="button" class="btn-modal-secondary" onclick="closeModal('projectModal')">Cancel</button>
+        <button type="submit" class="btn-modal-primary">Create Project</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Task Modal -->
+  <dialog id="taskModal" class="modal-dialog">
+    <div class="modal-header"><h3>New Task</h3><button class="modal-close" onclick="closeModal('taskModal')">✕</button></div>
+    <form id="taskForm" class="modal-body">
+      <label>Task Title<input id="taskTitle" placeholder="Design mockups" required /></label>
+      <label>Project<select id="taskProject"><option value="">— None —</option></select></label>
+      <label>Assigned To<input id="taskAssignee" placeholder="Team member name" /></label>
+      <label>Status<select id="taskStatus"><option>To Do</option><option>In Progress</option><option>Done</option><option>Blocked</option></select></label>
+      <label>Priority<select id="taskPriority"><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></label>
+      <label>Due Date<input id="taskDueDate" type="date" /></label>
+      <div class="modal-footer">
+        <button type="button" class="btn-modal-secondary" onclick="closeModal('taskModal')">Cancel</button>
+        <button type="submit" class="btn-modal-primary">Create Task</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Milestone Modal -->
+  <dialog id="milestoneModal" class="modal-dialog">
+    <div class="modal-header"><h3>New Milestone</h3><button class="modal-close" onclick="closeModal('milestoneModal')">✕</button></div>
+    <form id="milestoneForm" class="modal-body">
+      <label>Milestone Name<input id="milestoneName" placeholder="MVP Launch" required /></label>
+      <label>Project<select id="milestoneProject"><option value="">— None —</option></select></label>
+      <label>Target Date<input id="milestoneDate" type="date" required /></label>
+      <label>Status<select id="milestoneStatus"><option>Upcoming</option><option>Achieved</option><option>Missed</option></select></label>
+      <div class="modal-footer">
+        <button type="button" class="btn-modal-secondary" onclick="closeModal('milestoneModal')">Cancel</button>
+        <button type="submit" class="btn-modal-primary">Add Milestone</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Activity Modal -->
+  <dialog id="activityModal" class="modal-dialog">
+    <div class="modal-header"><h3>Log Activity</h3><button class="modal-close" onclick="closeModal('activityModal')">✕</button></div>
+    <form id="activityForm" class="modal-body">
+      <label>Type<select id="activityType"><option>Call</option><option>Meeting</option><option>Demo</option><option>Follow-up</option><option>Email</option><option>Note</option></select></label>
+      <label>Note<textarea id="activityNote" rows="3" placeholder="Activity details…" required></textarea></label>
+      <label>Link to Contact<select id="activityContact"><option value="">— None —</option></select></label>
+      <div class="modal-footer">
+        <button type="button" class="btn-modal-secondary" onclick="closeModal('activityModal')">Cancel</button>
+        <button type="submit" class="btn-modal-primary">Log Activity</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Ticket Modal -->
+  <dialog id="ticketModal" class="modal-dialog">
+    <div class="modal-header"><h3>New Ticket</h3><button class="modal-close" onclick="closeModal('ticketModal')">✕</button></div>
+    <form id="ticketForm" class="modal-body">
+      <label>Title<input id="ticketTitle" placeholder="Login page broken on mobile" required /></label>
+      <label>Priority<select id="ticketPriority"><option>Low</option><option>Medium</option><option>High</option></select></label>
+      <label>Status<select id="ticketStatus"><option>Open</option><option>In Progress</option><option>Resolved</option></select></label>
+      <label>Link to Contact<select id="ticketContact"><option value="">— None —</option></select></label>
+      <div class="modal-footer">
+        <button type="button" class="btn-modal-secondary" onclick="closeModal('ticketModal')">Cancel</button>
+        <button type="submit" class="btn-modal-primary">Create Ticket</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Edit Modal -->
+  <dialog id="editDialog" class="modal-dialog">
+    <div class="modal-header"><h3 id="editDialogTitle">Edit</h3><button class="modal-close" onclick="this.closest('dialog').close()">✕</button></div>
+    <form id="editDialogForm" class="modal-body">
       <div id="editDialogBody"></div>
-      <div class="dialog-actions">
-        <button type="button" class="btn-outline dark" onclick="document.getElementById('editDialog').close()">Cancel</button>
-        <button type="submit">Save Changes</button>
+      <div class="modal-footer">
+        <button type="button" class="btn-modal-secondary" onclick="document.getElementById('editDialog').close()">Cancel</button>
+        <button type="submit" class="btn-modal-primary">Save Changes</button>
       </div>
     </form>
   </dialog>
+
   <script src="app.js"></script>
 </body>
 </html>
