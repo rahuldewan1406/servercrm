@@ -9,6 +9,9 @@ const state = {
   session: JSON.parse(localStorage.getItem("crm_session") || "null")
 };
 
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function isValidEmail(addr) { return EMAIL_RE.test(String(addr).trim()); }
 const q = (id) => document.getElementById(id);
 const navButtons = [...document.querySelectorAll(".nav-btn")];
 navButtons.forEach((btn) => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
@@ -103,6 +106,11 @@ async function sendMail(event) {
   const payload = { recipients, subject: q("mailSubject").value.trim(), body: q("mailBody").value.trim() };
   if (!payload.recipients.length) {
     setStatus(q("mailStatus"), "Please provide at least one recipient.", "warning");
+    return;
+  }
+  const invalidAddrs = payload.recipients.filter((r) => !isValidEmail(r));
+  if (invalidAddrs.length) {
+    setStatus(q("mailStatus"), `Invalid email address${invalidAddrs.length > 1 ? 'es' : ''}: ${invalidAddrs.join(', ')}`, "error");
     return;
   }
   if (!payload.subject || !payload.body) {
