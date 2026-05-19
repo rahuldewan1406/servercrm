@@ -3891,3 +3891,523 @@ const _flashStyle = document.createElement('style');
 _flashStyle.textContent = `@keyframes chatMsgFlash { 0%,100%{background:transparent} 50%{background:#fef08a} }`;
 document.head.appendChild(_flashStyle);
 
+
+// ══════════════════════════════════════════════════════════════════
+//  VIDEO CALLING  (WebRTC + localStorage signaling)
+// ══════════════════════════════════════════════════════════════════
+
+const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
+let _rtcPeer        = null;
+let _localStream    = null;
+let _callTimerInt   = null;
+let _callSeconds    = 0;
+let _isMuted        = false;
+let _isCamOff       = false;
+let _isScreenShare  = false;
+let _callType       = 'video'; // 'video' | 'audio'
+let _callContactId  = null;
+const SIGNAL_KEY    = 'crm_webrtc_signal';
+
+// ── Initiate call ─────────────────────────────────────────────────
+async function startVideoCall() { await _initiateCall('video'); }
+async function startAudioCall() { await _initiateCall('audio'); }
+
+async function _initiateCall(type) {
+  if (!chatState.activeContact) return;
+  _callType       = type;
+  _callContactId  = chatState.activeContact.id;
+  const contact   = chatState.activeContact;
+
+  try {
+    _localStream = await navigator.mediaDevices.getUserMedia(
+      type === 'video' ? { video:true, audio:true } : { audio:true }
+    );
+  } catch(err) {
+    alert(`Camera/microphone access denied. Please allow access in browser settings.\n${err.message}`);
+    return;
+  }
+
+  _showCallOverlay(contact, type, 'Calling…');
+  q('localVideo').srcObject = _localStream;
+
+  // Create peer connection
+  _rtcPeer = new RTCPeerConnection(rtcConfig);
+  _localStream.getTracks().forEach(track => _rtcPeer.addTrack(track, _localStream));
+
+  _rtcPeer.ontrack = e => { q('remoteVideo').srcObject = e.streams[0]; };
+  _rtcPeer.onicecandidate = e => {
+    if (e.candidate) _signal({ type:'candidate', candidate:e.candidate, from:'caller', to:contact.id });
+  };
+
+  const offer = await _rtcPeer.createOffer();
+  await _rtcPeer.setLocalDescription(offer);
+  _signal({ type:'offer', sdp:offer, callType:type, callerName:state.session?.name||'CRM User', callerId:state.session?.id, to:contact.id, from:'caller' });
+
+  // Log call in chat
+  _sendCallMsg(`📹 ${type==='video'?'Video':'Audio'} call started`);
+
+  // Poll for answer
+  _pollSignal(contact.id, 'caller');
+}
+
+// ── Signaling via localStorage (works same-origin tabs) ───────────
+function _signal(data) {
+  const signals = JSON.parse(localStorage.getItem(SIGNAL_KEY)||'[]');
+  signals.push({ ...data, ts: Date.now() });
+  // Keep last 20 signals only
+  localStorage.setItem(SIGNAL_KEY, JSON.stringify(signals.slice(-20)));
+}
+
+function _pollSignal(contactId, role) {
+  const interval = setInterval(async () => {
+    const signals = JSON.parse(localStorage.getItem(SIGNAL_KEY)||'[]');
+    const fresh   = signals.filter(s=>s.ts>Date.now()-30000);
+
+    if (role === 'caller') {
+      const answer = fresh.find(s=>s.type==='answer'&&s.from===contactId);
+      if (answer && _rtcPeer && !_rtcPeer.remoteDescription) {
+        await _rtcPeer.setRemoteDescription(new RTCSessionDescription(answer.sdp));
+        q('videoCallStatus').textContent = 'Connected';
+        _startCallTimer();
+      }
+      const candidates = fresh.filter(s=>s.type==='candidate'&&s.from===contactId);
+      for (const c of candidates) {
+        if (_rtcPeer) try { await _rtcPeer.addIceCandidate(new RTCIceCandidate(c.candidate)); } catch(e){}
+      }
+      const declined = fresh.find(s=>s.type==='declined'&&s.from===contactId);
+      if (declined) { clearInterval(interval); endCall(); pushNotif('Call declined','','\uD83D\uDCF5','info'); }
+    }
+
+    if (role === 'callee') {
+      const candidates = fresh.filter(s=>s.type==='candidate'&&s.from==='caller');
+      for (const c of candidates) {
+        if (_rtcPeer) try { await _rtcPeer.addIceCandidate(new RTCIceCandidate(c.candidate)); } catch(e){}
+      }
+    }
+  }, 500);
+  // Auto-clear after 60s
+  setTimeout(()=>clearInterval(interval), 60000);
+}
+
+// ── Receive incoming call (simulated — production: use socket) ────
+function _checkIncomingCalls() {
+  const signals = JSON.parse(localStorage.getItem(SIGNAL_KEY)||'[]');
+  const offer   = signals.find(s=>s.type==='offer'&&s.to===state.session?.id&&s.ts>Date.now()-30000);
+  if (!offer || q('videoCallOverlay').dataset.active) return;
+
+  // Show incoming call UI
+  const contact = state.contacts.find(c=>c.id===offer.callerId) || { name:offer.callerName||'Unknown', id:offer.callerId };
+  _showIncomingCall(contact, offer);
+}
+setInterval(_checkIncomingCalls, 1000);
+
+function _showIncomingCall(contact, offer) {
+  const color = avatarColor(contact.name);
+  q('incomingAvatar').style.background = color;
+  q('incomingAvatar').textContent = contact.name.charAt(0).toUpperCase();
+  q('incomingName').textContent   = contact.name;
+  q('incomingType').textContent   = offer.callType==='video' ? '📹 Incoming Video Call' : '📞 Incoming Audio Call';
+  q('videoCallOverlay').classList.remove('hidden');
+  q('videoCallOverlay').dataset.active = '1';
+  q('videoIncoming').classList.remove('hidden');
+  q('videoCallOverlay').dataset.offerId = JSON.stringify(offer);
+  playChatSound();
+}
+
+async function acceptCall() {
+  const offer = JSON.parse(q('videoCallOverlay').dataset.offerId||'{}');
+  if (!offer.sdp) return;
+  q('videoIncoming').classList.add('hidden');
+
+  try {
+    _localStream = await navigator.mediaDevices.getUserMedia(
+      offer.callType==='video' ? {video:true,audio:true} : {audio:true}
+    );
+  } catch(err) { alert('Camera/microphone access denied.'); declineCall(); return; }
+
+  const contact = state.contacts.find(c=>c.id===offer.callerId) || { name:offer.callerName, id:offer.callerId };
+  _showCallOverlay(contact, offer.callType, 'Connecting…');
+  q('localVideo').srcObject = _localStream;
+
+  _rtcPeer = new RTCPeerConnection(rtcConfig);
+  _localStream.getTracks().forEach(track => _rtcPeer.addTrack(track, _localStream));
+  _rtcPeer.ontrack = e => { q('remoteVideo').srcObject = e.streams[0]; q('videoCallStatus').textContent='Connected'; _startCallTimer(); };
+  _rtcPeer.onicecandidate = e => {
+    if (e.candidate) _signal({ type:'candidate', candidate:e.candidate, from:state.session?.id, to:'caller' });
+  };
+
+  await _rtcPeer.setRemoteDescription(new RTCSessionDescription(offer.sdp));
+  const answer = await _rtcPeer.createAnswer();
+  await _rtcPeer.setLocalDescription(answer);
+  _signal({ type:'answer', sdp:answer, from:contact.id, to:'caller' });
+  _pollSignal(null, 'callee');
+}
+
+function declineCall() {
+  const offer = JSON.parse(q('videoCallOverlay').dataset.offerId||'{}');
+  if (offer.callerId) _signal({ type:'declined', from:offer.callerId, to:'caller' });
+  _closeCallOverlay();
+}
+
+// ── Call overlay helpers ──────────────────────────────────────────
+function _showCallOverlay(contact, type, status) {
+  const overlay = q('videoCallOverlay');
+  overlay.classList.remove('hidden');
+  overlay.dataset.active = '1';
+  const color = avatarColor(contact?.name||'?');
+  q('videoCallerAvatar').style.background = color;
+  q('videoCallerAvatar').textContent = (contact?.name||'?').charAt(0).toUpperCase();
+  q('videoCallerName').textContent   = contact?.name || '—';
+  q('videoCallStatus').textContent   = status;
+  if (type==='audio') { q('remoteVideo').style.display='none'; q('localVideo').style.display='none'; }
+  else { q('remoteVideo').style.display=''; q('localVideo').style.display=''; }
+}
+
+function _closeCallOverlay() {
+  const overlay = q('videoCallOverlay');
+  overlay.classList.add('hidden');
+  overlay.dataset.active = '';
+  q('videoIncoming').classList.add('hidden');
+}
+
+function _startCallTimer() {
+  _callSeconds = 0;
+  clearInterval(_callTimerInt);
+  _callTimerInt = setInterval(()=>{
+    _callSeconds++;
+    const m = String(Math.floor(_callSeconds/60)).padStart(2,'0');
+    const s = String(_callSeconds%60).padStart(2,'0');
+    const el = q('videoCallTimer');
+    if (el) el.textContent = `${m}:${s}`;
+  }, 1000);
+}
+
+function endCall() {
+  clearInterval(_callTimerInt);
+  if (_localStream) { _localStream.getTracks().forEach(t=>t.stop()); _localStream=null; }
+  if (_rtcPeer)     { _rtcPeer.close(); _rtcPeer=null; }
+  _isMuted=false; _isCamOff=false; _isScreenShare=false;
+  _closeCallOverlay();
+  _sendCallMsg(`📵 Call ended (${String(Math.floor(_callSeconds/60)).padStart(2,'0')}:${String(_callSeconds%60).padStart(2,'0')})`);
+}
+
+// ── Call controls ─────────────────────────────────────────────────
+function toggleMute() {
+  _isMuted = !_isMuted;
+  _localStream?.getAudioTracks().forEach(t=>t.enabled=!_isMuted);
+  const btn = q('btnMute');
+  if (btn) { btn.textContent=_isMuted?'🔇':'🎤'; btn.classList.toggle('muted',_isMuted); }
+}
+function toggleCamera() {
+  _isCamOff = !_isCamOff;
+  _localStream?.getVideoTracks().forEach(t=>t.enabled=!_isCamOff);
+  const btn = q('btnCamera');
+  if (btn) { btn.textContent=_isCamOff?'📷':'📹'; btn.classList.toggle('cam-off',_isCamOff); }
+}
+async function toggleScreenShare() {
+  if (!_isScreenShare) {
+    try {
+      const screen = await navigator.mediaDevices.getDisplayMedia({video:true});
+      const track  = screen.getVideoTracks()[0];
+      const sender = _rtcPeer?.getSenders().find(s=>s.track?.kind==='video');
+      if (sender) sender.replaceTrack(track);
+      track.onended = ()=>toggleScreenShare();
+      _isScreenShare=true;
+      q('btnScreen')?.classList.add('active');
+    } catch(e) { pushNotif('Screen share cancelled','','🖥','info'); }
+  } else {
+    const vidTrack = _localStream?.getVideoTracks()[0];
+    const sender   = _rtcPeer?.getSenders().find(s=>s.track?.kind==='video');
+    if (sender && vidTrack) sender.replaceTrack(vidTrack);
+    _isScreenShare=false;
+    q('btnScreen')?.classList.remove('active');
+  }
+}
+function toggleSpeaker() {
+  const video = q('remoteVideo');
+  if (video) { video.muted = !video.muted; q('btnSpeaker').textContent = video.muted?'🔕':'🔊'; }
+}
+
+function _sendCallMsg(text) {
+  if (!chatState.activePhone) return;
+  if (!chatState.threads[chatState.activePhone]) chatState.threads[chatState.activePhone]={messages:[]};
+  chatState.threads[chatState.activePhone].messages.push({ id:crypto.randomUUID(), text, direction:'sent', type:'call', time:new Date().toISOString(), sender:state.session?.name||'You' });
+  saveChatState(); renderMessages(); renderChatList();
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  GROUP CHAT
+// ══════════════════════════════════════════════════════════════════
+
+// Groups stored in chatState
+if (!chatState.groups) chatState.groups = JSON.parse(localStorage.getItem('crm_chat_groups')||'[]');
+function saveGroups() { localStorage.setItem('crm_chat_groups', JSON.stringify(chatState.groups)); saveChatState(); }
+
+// ── Create group ──────────────────────────────────────────────────
+function openCreateGroupModal() {
+  const sel = q('groupMemberSelect');
+  const contacts = state.contacts.filter(c=>c.phone);
+  if (!contacts.length) { alert('No contacts with phone numbers. Add phone numbers to contacts first.'); return; }
+
+  sel.innerHTML = contacts.map(c=>`
+    <div class="group-member-item" id="gmi_${c.id}" onclick="toggleGroupMember('${c.id}',this)">
+      <input type="checkbox" id="gmc_${c.id}" style="pointer-events:none" />
+      <div class="group-member-avatar-sm" style="background:${avatarColor(c.name)}">${c.name.charAt(0)}</div>
+      <span>${c.name}</span>
+    </div>`).join('');
+  q('groupSelectedPreview').innerHTML='';
+  q('groupName').value=''; q('groupDesc').value='';
+  openModal('createGroupModal');
+}
+
+const _selectedGroupMembers = new Set();
+function toggleGroupMember(contactId, el) {
+  if (_selectedGroupMembers.has(contactId)) {
+    _selectedGroupMembers.delete(contactId);
+    el.classList.remove('selected');
+    q(`gmc_${contactId}`).checked = false;
+  } else {
+    _selectedGroupMembers.add(contactId);
+    el.classList.add('selected');
+    q(`gmc_${contactId}`).checked = true;
+  }
+  renderGroupMemberPreview();
+}
+function renderGroupMemberPreview() {
+  const preview = q('groupSelectedPreview');
+  preview.innerHTML = [..._selectedGroupMembers].map(id=>{
+    const c = state.contacts.find(x=>x.id===id);
+    return c ? `<div class="group-member-chip"><div class="group-chip-avatar" style="background:${avatarColor(c.name)}">${c.name.charAt(0)}</div>${c.name}</div>` : '';
+  }).join('');
+}
+
+function createGroup() {
+  const name = q('groupName').value.trim();
+  if (!name) { alert('Group name is required.'); return; }
+  if (_selectedGroupMembers.size < 1) { alert('Select at least 1 member.'); return; }
+
+  const group = {
+    id:          'grp_'+crypto.randomUUID().slice(0,8),
+    name,
+    description: q('groupDesc').value.trim(),
+    members:     [state.session?.id||'admin', ...[..._selectedGroupMembers]],
+    memberNames: [state.session?.name||'You', ...[..._selectedGroupMembers].map(id=>state.contacts.find(c=>c.id===id)?.name||id)],
+    createdAt:   new Date().toISOString(),
+    createdBy:   state.session?.name||'You',
+    messages:    [],
+  };
+  chatState.groups.push(group);
+  _selectedGroupMembers.clear();
+  saveGroups();
+  closeModal('createGroupModal');
+  openGroupThread(group.id);
+  renderChatList();
+  pushNotif(`Group created: ${name}`, `${group.members.length} members`, '👥','success');
+}
+
+// ── Open group thread ─────────────────────────────────────────────
+function openGroupThread(groupId) {
+  const group = chatState.groups.find(g=>g.id===groupId);
+  if (!group) return;
+
+  chatState.activePhone   = groupId;   // reuse activePhone as thread key
+  chatState.activeContact = null;
+  chatState.activeGroup   = group;
+
+  const overlay = q('videoCallOverlay');
+
+  q('chatThreadAvatar').style.background = 'linear-gradient(135deg,#2563eb,#7c3aed)';
+  q('chatThreadAvatar').textContent      = '👥';
+  q('chatThreadAvatar').style.borderRadius = '10px';
+  q('chatThreadName').textContent   = group.name;
+  q('chatThreadPhone').textContent  = `${group.members.length} members · ${group.description||'Group Chat'}`;
+  q('chatCallBtn') && (q('chatCallBtn').onclick = ()=>startGroupCall(groupId));
+
+  q('chatThreadEmpty').classList.add('hidden');
+  q('chatThreadWrap').classList.remove('hidden');
+  q('chatSidebar').classList.add('thread-open');
+
+  // Init group thread if needed
+  if (!chatState.threads[groupId]) chatState.threads[groupId]={messages:[], isGroup:true};
+  chatState.threads[groupId].lastRead = new Date().toISOString();
+  saveChatState();
+
+  renderGroupMessages(groupId);
+  renderChatList();
+  updateChatBadge();
+  setTimeout(()=>q('chatInput')?.focus(), 100);
+}
+
+function renderGroupMessages(groupId) {
+  const group  = chatState.groups.find(g=>g.id===groupId);
+  const thread = chatState.threads[groupId] || {messages:[]};
+  const msgsEl = q('chatMessages');
+  if (!msgsEl) return;
+
+  if (!thread.messages.length) {
+    msgsEl.innerHTML=`<div class="chat-system-msg" style="margin-top:auto">
+      <strong>${group?.name||'Group'}</strong> was created by ${group?.createdBy||'You'}
+    </div>
+    <div class="chat-system-msg" style="font-size:.7rem;color:var(--text-3)">
+      👥 ${group?.memberNames?.join(', ')||''}
+    </div>`;
+    return;
+  }
+
+  let html='', lastDate='';
+  thread.messages.forEach(msg=>{
+    const msgDate=new Date(msg.time).toDateString();
+    const today=new Date().toDateString();
+    const yest=new Date(Date.now()-86400000).toDateString();
+    if (msgDate!==lastDate) {
+      const label=msgDate===today?'Today':msgDate===yest?'Yesterday':new Date(msg.time).toLocaleDateString('en-IN',{day:'numeric',month:'long'});
+      html+=`<div class="chat-date-divider"><span>${label}</span></div>`;
+      lastDate=msgDate;
+    }
+    if (msg.type==='system') { html+=`<div class="chat-system-msg">${escapeHtml(msg.text)}</div>`; return; }
+    const isMe = msg.sender===state.session?.name||msg.direction==='sent';
+    html+=`<div class="chat-msg-group ${isMe?'sent':'received'}">
+      ${!isMe?`<div class="group-sender-label">${escapeHtml(msg.sender||'')}</div>`:''}
+      <div class="chat-bubble">${escapeHtml(msg.text)}
+        <div class="chat-bubble-meta">
+          <span class="chat-bubble-time">${formatChatTime(msg.time)}</span>
+          ${isMe?'<span class="chat-bubble-tick read">✓✓</span>':''}
+        </div>
+      </div>
+    </div>`;
+  });
+  msgsEl.innerHTML=html;
+  msgsEl.scrollTop=msgsEl.scrollHeight;
+}
+
+// ── Override sendChatMessage for groups ───────────────────────────
+const _prevSendChat2 = window.sendChatMessage;
+window.sendChatMessage = function() {
+  if (chatState.activeGroup) {
+    const input=q('chatInput'); const text=input?.value.trim();
+    if (!text||!chatState.activeGroup) return;
+    const msg={id:crypto.randomUUID(),text,direction:'sent',type:'text',time:new Date().toISOString(),sender:state.session?.name||'You'};
+    if (!chatState.threads[chatState.activeGroup.id]) chatState.threads[chatState.activeGroup.id]={messages:[],isGroup:true};
+    chatState.threads[chatState.activeGroup.id].messages.push(msg);
+    saveChatState();
+    cancelReply(); input.value=''; input.style.height='auto';
+    renderGroupMessages(chatState.activeGroup.id); renderChatList();
+    return;
+  }
+  _prevSendChat2();
+};
+
+// ── Override renderChatList to include groups ─────────────────────
+const _prevRenderChatList = renderChatList;
+window.renderChatList = function() {
+  const search = (q('chatSearch')?.value||'').toLowerCase();
+  const filter = chatState.filter;
+  const listEl = q('chatContactList');
+  const countEl = q('chatContactCountLabel');
+  if (!listEl) return;
+
+  let items = []; // {type, id, name, preview, time, unread, color, isGroup}
+
+  // Groups
+  if (filter==='all'||filter==='groups') {
+    chatState.groups.forEach(g=>{
+      const thread=chatState.threads[g.id]||{messages:[]};
+      const lastMsg=thread.messages[thread.messages.length-1];
+      const lastRead=thread.lastRead||0;
+      const unread=thread.messages.filter(m=>m.direction!=='sent'&&new Date(m.time)>new Date(lastRead)).length;
+      if (search&&!g.name.toLowerCase().includes(search)) return;
+      items.push({type:'group',id:g.id,name:g.name,sub:`${g.members.length} members`,preview:lastMsg?`${lastMsg.sender}: ${lastMsg.text.slice(0,30)}`:g.description||'Group chat',time:lastMsg?.time||g.createdAt,unread});
+    });
+  }
+
+  // Contacts
+  if (filter!=='groups') {
+    let contacts=[...state.contacts];
+    if (filter==='phone') contacts=contacts.filter(c=>c.phone);
+    if (filter==='unread') contacts=contacts.filter(c=>{
+      const ph=normalisePhone(c.phone); const t=chatState.threads[ph];
+      return t?.messages?.some(m=>m.direction==='received'&&new Date(m.time)>new Date(t.lastRead||0));
+    });
+    if (search) contacts=contacts.filter(c=>c.name.toLowerCase().includes(search)||(c.phone||'').includes(search));
+    contacts.forEach(c=>{
+      const ph=normalisePhone(c.phone); const thread=chatState.threads[ph]||{messages:[]};
+      const lastMsg=thread.messages[thread.messages.length-1];
+      const lastRead=thread.lastRead||0;
+      const unread=thread.messages.filter(m=>m.direction==='received'&&new Date(m.time)>new Date(lastRead)).length;
+      const hasPhone=Boolean(c.phone);
+      items.push({type:'contact',id:c.id,phone:ph,name:c.name,sub:c.company||'',preview:lastMsg?(lastMsg.direction==='sent'?'You: ':'')+lastMsg.text.slice(0,35):(hasPhone?'Tap to start':'No phone #'),time:lastMsg?.time||'',unread,hasPhone,color:avatarColor(c.name)});
+    });
+  }
+
+  // Sort by recent
+  items.sort((a,b)=>(b.time||'').localeCompare(a.time||''));
+  if(countEl) countEl.textContent=`${items.length} conversation${items.length!==1?'s':''}`;
+
+  if (!items.length) { listEl.innerHTML=`<div style="padding:1.5rem;text-align:center;color:var(--text-3);font-size:.8rem">${search?'No results.':'No conversations yet.'}</div>`; return; }
+
+  listEl.innerHTML=items.map(item=>{
+    const isActive = chatState.activePhone===(item.type==='group'?item.id:item.phone);
+    const timeStr  = item.time?formatChatTime(item.time):'';
+    if (item.type==='group') {
+      return `<div class="chat-contact-item${isActive?' active':''}" onclick="openGroupThread('${item.id}')">
+        <div class="chat-group-avatar">👥</div>
+        <div class="chat-contact-info">
+          <div class="chat-contact-name">${item.name}</div>
+          <div class="chat-contact-preview">${item.preview}</div>
+        </div>
+        <div class="chat-contact-meta">
+          ${timeStr?`<span class="chat-contact-time">${timeStr}</span>`:''}
+          ${item.unread?`<span class="chat-unread-dot">${item.unread}</span>`:''}
+        </div>
+      </div>`;
+    }
+    return `<div class="chat-contact-item${isActive?' active':''}${!item.hasPhone?' no-phone':''}" onclick="${item.hasPhone?`openChatThread('${item.phone}','${item.id}')`:''}" title="${!item.hasPhone?'No phone number':''}">
+      <div class="chat-contact-avatar" style="background:${item.color}">${item.name.charAt(0).toUpperCase()}</div>
+      <div class="chat-contact-info">
+        <div class="chat-contact-name">${item.name}</div>
+        <div class="chat-contact-preview">${item.preview}</div>
+      </div>
+      <div class="chat-contact-meta">
+        ${timeStr?`<span class="chat-contact-time">${timeStr}</span>`:''}
+        ${item.unread?`<span class="chat-unread-dot">${item.unread}</span>`:''}
+        ${!item.hasPhone?`<span class="chat-no-phone-badge">No #</span>`:''}
+      </div>
+    </div>`;
+  }).join('');
+};
+
+// ── Group Info ────────────────────────────────────────────────────
+function showGroupInfo() {
+  const group=chatState.activeGroup; if(!group) return;
+  q('groupInfoBody').innerHTML=`
+    <div style="text-align:center;margin-bottom:1rem">
+      <div style="width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,#2563eb,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:1.5rem;margin:0 auto .5rem">👥</div>
+      <div style="font-weight:700;font-size:1rem">${group.name}</div>
+      ${group.description?`<div style="font-size:.8rem;color:var(--text-3)">${group.description}</div>`:''}
+    </div>
+    <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin-bottom:.4rem">${group.members.length} Members</div>
+    ${group.memberNames.map((n,i)=>`<div style="display:flex;align-items:center;gap:.5rem;padding:.4rem 0;border-bottom:1px solid var(--border)"><div style="width:28px;height:28px;border-radius:50%;background:${avatarColor(n)};display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;color:#fff">${n.charAt(0)}</div><span style="font-size:.84rem">${n}</span>${i===0?'<span style="font-size:.7rem;color:var(--accent);margin-left:auto">Admin</span>':''}</div>`).join('')}
+    <div style="font-size:.72rem;color:var(--text-3);margin-top:.75rem">Created by ${group.createdBy} · ${fmtDate(group.createdAt)}</div>`;
+  openModal('groupInfoModal');
+}
+
+function leaveGroup() {
+  if (!chatState.activeGroup) return;
+  if (!confirm(`Leave "${chatState.activeGroup.name}"?`)) return;
+  chatState.groups=chatState.groups.filter(g=>g.id!==chatState.activeGroup.id);
+  saveGroups(); closeModal('groupInfoModal'); closeChatThread();
+  renderChatList();
+}
+
+// ── Override closeChatThread to reset group state ─────────────────
+const _prevCloseThread=closeChatThread;
+window.closeChatThread=function(){
+  chatState.activeGroup=null;
+  _prevCloseThread();
+};
+
+// ── Group video call (future: multi-party) ────────────────────────
+function startGroupCall(groupId) {
+  pushNotif('Group call','Group video calls require a media server. Use individual calls for now.','📹','info');
+}
+
