@@ -35,3 +35,19 @@ ul{list-style:none;padding:0;margin:0;display:grid;gap:.5rem}li{border:1px solid
 .c360-section h4 { margin: 0 0 4px; font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted, #666); }
 .c360-section ul { margin: 0; padding-left: 16px; font-size: .85rem; }
 .c360-section li { margin-bottom: 3px; }
+
+/* ── Edit / Delete row actions ── */
+.row-actions { display: inline-flex; gap: 6px; margin-left: 10px; vertical-align: middle; }
+.btn-edit, .btn-delete { font-size: .75rem; padding: 2px 8px; border-radius: 4px; border: 1px solid; cursor: pointer; }
+.btn-edit   { background: #e8f0fe; border-color: #4a80f5; color: #1a56db; }
+.btn-edit:hover   { background: #c7d9fc; }
+.btn-delete { background: #fde8e8; border-color: #e53e3e; color: #c53030; }
+.btn-delete:hover { background: #fcc; }
+
+/* ── Edit dialog ── */
+.edit-dialog { border: none; border-radius: 10px; padding: 0; box-shadow: 0 8px 32px rgba(0,0,0,.18); min-width: 340px; }
+.edit-dialog::backdrop { background: rgba(0,0,0,.4); }
+.edit-form { padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+.edit-form h3 { margin: 0 0 4px; font-size: 1.1rem; }
+.edit-form label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; font-weight: 500; }
+.edit-form input, .edit-form select { padding: 6px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: .9rem; }

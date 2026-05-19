@@ -192,9 +192,89 @@ function renderCustomer360() {
   `;
 }
 function render() { const today = new Date(); const in30 = new Date(Date.now() + 30 * 86400000); const renewalsDue = state.accounts.filter((a) => a.renewalDate && new Date(a.renewalDate) >= today && new Date(a.renewalDate) <= in30).length; const open = state.tickets.filter((t) => t.status === "Open").length, progress = state.tickets.filter((t) => t.status === "In Progress").length, resolved = state.tickets.filter((t) => t.status === "Resolved").length; q("contactCount").textContent = state.contacts.length; q("leadCount").textContent = state.leads.length; q("opportunityCount").textContent = state.opportunities.length; q("ticketOpenCount").textContent = open; q("renewalDueCount").textContent = renewalsDue; q("projectActiveCount").textContent = state.projects.filter((p) => p.status === "Active").length; q("ticketInProgressCount").textContent = progress; q("ticketResolvedCount").textContent = resolved;
-q("contactList").innerHTML = state.contacts.map((c) => `<li><strong>${c.name}</strong> — ${c.company}<br>${c.email}</li>`).join(""); q("accountList").innerHTML = state.accounts.map((a) => `<li><strong>${a.name}</strong> (${a.tier})<br>Renewal: ${a.renewalDate}</li>`).join(""); q("leadList").innerHTML = state.leads.map((l) => `<li><strong>${l.title}</strong><br>${l.stage} • ₹${l.value.toLocaleString()}</li>`).join(""); q("opportunityList").innerHTML = state.opportunities.map((o) => `<li><strong>${o.name}</strong><br>₹${o.value.toLocaleString()} @ ${o.probability}%</li>`).join(""); q("weightedForecast").textContent = state.opportunities.reduce((s, o) => s + (o.value * o.probability / 100), 0).toLocaleString(); q("projectList").innerHTML = state.projects.map((p) => `<li><strong>${p.name}</strong><br>${p.status} • PM: ${p.manager}</li>`).join(""); q("activityList").innerHTML = state.activities.slice(0, 8).map((a) => `<li><strong>${a.type}</strong><br>${a.note}</li>`).join(""); const filter = q("ticketFilter").value; const tks = filter === "All" ? state.tickets : state.tickets.filter((t) => t.status === filter); q("ticketList").innerHTML = tks.map((t) => `<li><strong>${t.title}</strong><br>${t.priority} • ${t.status}</li>`).join(""); const total = Math.max(1, state.tickets.length); q("ticketAnalytics").innerHTML = [["Open", open], ["In Progress", progress], ["Resolved", resolved]].map(([l, v]) => `<div class='bar-row'><span>${l}</span><div class='bar'><i style='width:${(v / total) * 100}%'></i></div><b>${v}</b></div>`).join(""); q("customerSelect").innerHTML = `<option value="">Select customer</option>` + state.contacts.map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
+q("contactList").innerHTML = state.contacts.map((c) => `<li><strong>${c.name}</strong> — ${c.company}<br>${c.email}<div class="row-actions"><button class="btn-edit" onclick="openEditDialog('contacts','${c.id}')">Edit</button><button class="btn-delete" onclick="deleteRecord('contacts','${c.id}')">Delete</button></div></li>`).join(""); q("accountList").innerHTML = state.accounts.map((a) => `<li><strong>${a.name}</strong> (${a.tier})<br>Renewal: ${a.renewalDate}</li>`).join(""); q("leadList").innerHTML = state.leads.map((l) => `<li><strong>${l.title}</strong><br>${l.stage} • ₹${l.value.toLocaleString()}<div class="row-actions"><button class="btn-edit" onclick="openEditDialog('leads','${l.id}')">Edit</button><button class="btn-delete" onclick="deleteRecord('leads','${l.id}')">Delete</button></div></li>`).join(""); q("opportunityList").innerHTML = state.opportunities.map((o) => `<li><strong>${o.name}</strong><br>₹${o.value.toLocaleString()} @ ${o.probability}%</li>`).join(""); q("weightedForecast").textContent = state.opportunities.reduce((s, o) => s + (o.value * o.probability / 100), 0).toLocaleString(); q("projectList").innerHTML = state.projects.map((p) => `<li><strong>${p.name}</strong><br>${p.status} • PM: ${p.manager}</li>`).join(""); q("activityList").innerHTML = state.activities.slice(0, 8).map((a) => `<li><strong>${a.type}</strong><br>${a.note}</li>`).join(""); const filter = q("ticketFilter").value; const tks = filter === "All" ? state.tickets : state.tickets.filter((t) => t.status === filter); q("ticketList").innerHTML = tks.map((t) => `<li><strong>${t.title}</strong><br>${t.priority} • ${t.status}<div class="row-actions"><button class="btn-edit" onclick="openEditDialog('tickets','${t.id}')">Edit</button><button class="btn-delete" onclick="deleteRecord('tickets','${t.id}')">Delete</button></div></li>`).join(""); const total = Math.max(1, state.tickets.length); q("ticketAnalytics").innerHTML = [["Open", open], ["In Progress", progress], ["Resolved", resolved]].map(([l, v]) => `<div class='bar-row'><span>${l}</span><div class='bar'><i style='width:${(v / total) * 100}%'></i></div><b>${v}</b></div>`).join(""); q("customerSelect").innerHTML = `<option value="">Select customer</option>` + state.contacts.map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
   const contactOptions = '<option value="">Link to Contact (optional)</option>' + state.contacts.map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
   ["leadContact","projectContact","activityContact","ticketContact"].forEach((id) => { const el = q(id); if (el) el.innerHTML = contactOptions; }); renderCustomer360(); }
+
+function deleteRecord(collection, id) {
+  state[collection] = state[collection].filter((r) => r.id !== id);
+  persistAndRender();
+}
+
+function openEditDialog(collection, id) {
+  const record = state[collection].find((r) => r.id === id);
+  if (!record) return;
+  const dialog = q('editDialog');
+  const title  = q('editDialogTitle');
+  const body   = q('editDialogBody');
+  const form   = q('editDialogForm');
+
+  // Build form fields based on collection
+  const fields = {
+    contacts: [
+      { id:'eName',           label:'Full Name',        type:'text',   key:'name' },
+      { id:'eEmail',          label:'Primary Email',    type:'email',  key:'email' },
+      { id:'eSecondaryEmail', label:'Secondary Email',  type:'text',   key:'secondaryEmail' },
+      { id:'ePhone',          label:'Phone',            type:'text',   key:'phone' },
+      { id:'eCompany',        label:'Company',          type:'text',   key:'company' },
+      { id:'eLocation',       label:'Location',         type:'text',   key:'location' },
+      { id:'eAge',            label:'Age',              type:'number', key:'age' },
+    ],
+    leads: [
+      { id:'eLeadTitle', label:'Lead Title', type:'text',   key:'title' },
+      { id:'eLeadValue', label:'Value (₹)',  type:'number', key:'value' },
+    ],
+    tickets: [
+      { id:'eTicketTitle', label:'Ticket Title', type:'text', key:'title' },
+    ],
+  };
+
+  const selectFields = {
+    leads:   [{ id:'eLeadStage',    label:'Stage',    key:'stage',    options:['New','Qualified','Proposal','Won','Lost'] }],
+    tickets: [
+      { id:'eTicketPriority', label:'Priority', key:'priority', options:['Low','Medium','High'] },
+      { id:'eTicketStatus',   label:'Status',   key:'status',   options:['Open','In Progress','Resolved'] },
+    ],
+    contacts: [{ id:'eGender', label:'Gender', key:'gender', options:['Female','Male','Other'] }],
+  };
+
+  const titleMap = { contacts:'Edit Contact', leads:'Edit Lead', tickets:'Edit Ticket' };
+  title.textContent = titleMap[collection] || 'Edit';
+
+  const textInputs = (fields[collection] || []).map(f =>
+    `<label>${f.label}<input id="${f.id}" type="${f.type}" value="${record[f.key] ?? ''}" /></label>`
+  ).join('');
+
+  const selects = (selectFields[collection] || []).map(f =>
+    `<label>${f.label}<select id="${f.id}">${f.options.map(o =>
+      `<option${record[f.key]===o?' selected':''} value="${o}">${o}</option>`
+    ).join('')}</select></label>`
+  ).join('');
+
+  body.innerHTML = textInputs + selects;
+
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const idx = state[collection].findIndex((r) => r.id === id);
+    if (idx === -1) return;
+
+    (fields[collection] || []).forEach(f => {
+      const el = q(f.id);
+      if (!el) return;
+      state[collection][idx][f.key] = f.type === 'number' ? Number(el.value) : el.value.trim();
+    });
+    (selectFields[collection] || []).forEach(f => {
+      const el = q(f.id);
+      if (el) state[collection][idx][f.key] = el.value;
+    });
+
+    persistAndRender();
+    dialog.close();
+  };
+
+  dialog.showModal();
+}
+
 renderSession();
 render();
 checkSmtpApi();
