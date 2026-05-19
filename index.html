@@ -156,7 +156,7 @@
     <div class="topbar-user">
       <span id="smtpDot" class="status-dot" title="SMTP Status"></span>
       <!-- Chat messenger button -->
-      <div class="chat-bell-wrap" id="chatBellWrap">
+      <div class="chat-bell-wrap hidden" id="chatBellWrap" style="display:none">
         <button class="notif-bell" id="chatToggleBtn" onclick="toggleChat()" title="Messages">
           💬
           <span class="notif-badge hidden" id="chatUnreadBadge">0</span>
@@ -1061,7 +1061,7 @@
   <!-- ══════════════════════════════════════════════════
        CHAT MESSENGER (Contact-phone based)
   ══════════════════════════════════════════════════ -->
-  <div id="chatMessenger" class="chat-messenger hidden">
+  <div id="chatMessenger" class="chat-messenger hidden" style="display:none">
 
     <!-- Header -->
     <div class="chat-header">

@@ -115,6 +115,10 @@ async function login(e) {
     setTimeout(()=>{ if(screen) screen.style.display='none'; }, 450);
     q('loginForm').reset();
     renderSession(); await loadAllData(); renderAll();
+    // Show chat button after login
+    const chatWrap = q('chatBellWrap');
+    if (chatWrap) chatWrap.style.display='flex';
+    initChat();
   } catch {
     if (errEl) errEl.textContent = 'Cannot reach API server on port 3002. Please ensure the backend is running.';
     if (btn)    btn.disabled=false;
@@ -316,11 +320,21 @@ function renderSession() {
   q('loginBtn').classList.toggle('hidden', li);
   q('logoutBtn').classList.toggle('hidden', !li);
   q('userChip').classList.toggle('hidden', !li);
+  // Show/hide chat button based on login state
+  const chatWrap = q('chatBellWrap');
+  if (chatWrap) {
+    chatWrap.style.display = li ? 'flex' : 'none';
+  }
   if (li) {
     q('userBadge').textContent = state.session.name;
     q('userAvatar').textContent = state.session.name.charAt(0).toUpperCase();
     const role = can('users.delete')?'Admin':can('users.read')?'Manager':can('leads.delete')?'Sales Rep':'Viewer';
     q('roleBadge').textContent = role;
+  } else {
+    // Hide chat panel on logout
+    const panel = q('chatMessenger');
+    if (panel) { panel.classList.add('hidden'); panel.style.display='none'; }
+    chatState.open = false;
   }
 }
 
@@ -2662,14 +2676,16 @@ function normalisePhone(phone) {
 
 // ── Open / Close ──────────────────────────────────────────────────
 function toggleChat() {
-  chatState.open = !chatState.open;
   const panel = q('chatMessenger');
+  if (!panel) { console.warn('chatMessenger not found'); return; }
+  chatState.open = !chatState.open;
   if (chatState.open) {
+    panel.style.display = 'flex';
     panel.classList.remove('hidden');
-    renderChatList();
-    updateChatBadge();
+    setTimeout(()=>{ renderChatList(); updateChatBadge(); }, 10);
   } else {
     panel.classList.add('hidden');
+    setTimeout(()=>{ panel.style.display='none'; }, 250);
   }
 }
 
