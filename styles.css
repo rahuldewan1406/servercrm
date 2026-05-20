@@ -1488,3 +1488,16 @@ dialog::backdrop { background: rgba(15,23,42,.5); backdrop-filter: blur(2px); }
 
 /* Group message sender label */
 .group-sender-label { font-size: .68rem; font-weight: 700; color: var(--accent); margin-bottom: 2px; padding-left: .1rem; }
+
+/* ── Direct video call button on contact rows ── */
+.chat-video-direct-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: .85rem; padding: 2px 3px; border-radius: 5px;
+  opacity: 0; transition: opacity .15s, background .15s;
+  flex-shrink: 0;
+}
+.chat-contact-item:hover .chat-video-direct-btn { opacity: 1; }
+.chat-video-direct-btn:hover { background: #eff6ff; }
+
+/* Remove dimming on no-phone contacts */
+.chat-contact-item.no-phone { opacity: 1; cursor: pointer; }

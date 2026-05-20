@@ -1766,6 +1766,47 @@ q('c_location')?.addEventListener('keydown', e => {
   options[_cityHighlightIdx]?.scrollIntoView({block:'nearest'});
 });
 
+
+// ── openChatContact — opens thread OR prompts video if no phone ───
+function openChatContact(phone, contactId, hasPhone) {
+  if (hasPhone && phone) {
+    openChatThread(phone, contactId);
+  } else {
+    // No phone — offer video call directly
+    const c = state.contacts.find(x=>x.id===contactId);
+    if (!c) return;
+    chatState.activeContact = c;
+    chatState.activePhone   = null;
+    // Show thread panel with video-only UI
+    q('chatThreadAvatar').style.background = avatarColor(c.name);
+    q('chatThreadAvatar').textContent = c.name.charAt(0).toUpperCase();
+    q('chatThreadName').textContent   = c.name;
+    q('chatThreadPhone').textContent  = '📹 Video / audio calls only (no phone number)';
+    q('chatThreadEmpty').classList.add('hidden');
+    q('chatThreadWrap').classList.remove('hidden');
+    q('chatSidebar').classList.add('thread-open');
+    q('chatMessages').innerHTML = `
+      <div class="chat-system-msg" style="margin-top:auto;padding:1.5rem;text-align:center">
+        <div style="font-size:2rem;margin-bottom:.75rem">📹</div>
+        <div style="font-weight:600;font-size:.9rem;color:var(--text)">${c.name} has no phone number.</div>
+        <div style="font-size:.82rem;color:var(--text-3);margin:.4rem 0 1rem">You can still start a video or audio call.</div>
+        <div style="display:flex;gap:.75rem;justify-content:center">
+          <button class="btn-primary-sm" onclick="startVideoCall()">📹 Video Call</button>
+          <button class="btn-secondary-sm" onclick="startAudioCall()">📞 Audio Call</button>
+        </div>
+      </div>`;
+    renderChatList();
+  }
+}
+
+// ── quickVideoCall — start video call directly from contact list ──
+function quickVideoCall(contactId) {
+  const c = state.contacts.find(x=>x.id===contactId);
+  if (!c) return;
+  chatState.activeContact = c;
+  startVideoCall();
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 // Show login screen on load (hide main app until authenticated)
 const _loginScreen = q('loginScreen');
@@ -3127,13 +3168,13 @@ function renderChatList() {
     const lastRead = thread.lastRead||0;
     const unread   = thread.messages.filter(m=>m.direction==='received'&&new Date(m.time)>new Date(lastRead)).length;
     const isActive = chatState.activePhone === ph;
-    const preview  = lastMsg ? (lastMsg.direction==='sent'?'You: ':'')+lastMsg.text.slice(0,35) : (hasPhone?'Tap to start chatting':'No phone number');
+    const preview  = lastMsg ? (lastMsg.direction==='sent'?'You: ':'')+lastMsg.text.slice(0,35) : (hasPhone?'Tap to start chatting':'No phone — video call only');
     const timeStr  = lastMsg ? formatChatTime(lastMsg.time) : '';
     const color    = avatarColor(c.name);
 
-    return `<div class="chat-contact-item${isActive?' active':''}${!hasPhone?' no-phone':''}"
-      onclick="${hasPhone?`openChatThread('${ph}','${c.id}')`:''}"
-      title="${!hasPhone?'No phone number — add one in Contacts':''}">
+    return `<div class="chat-contact-item${isActive?' active':''}"
+      onclick="openChatContact('${ph}','${c.id}',${hasPhone})"
+      title="${!hasPhone?'No phone — click for video call':''}">
       <div class="chat-contact-avatar" style="background:${color}">${c.name.charAt(0).toUpperCase()}</div>
       <div class="chat-contact-info">
         <div class="chat-contact-name">${c.name}</div>
@@ -3142,7 +3183,7 @@ function renderChatList() {
       <div class="chat-contact-meta">
         ${timeStr?`<span class="chat-contact-time">${timeStr}</span>`:''}
         ${unread?`<span class="chat-unread-dot">${unread}</span>`:''}
-        ${!hasPhone?`<span class="chat-no-phone-badge">No #</span>`:''}
+        <button class="chat-video-direct-btn" onclick="event.stopPropagation();quickVideoCall('${c.id}')" title="Video Call">📹</button>
       </div>
     </div>`;
   }).join('');
@@ -3913,7 +3954,7 @@ async function startVideoCall() { await _initiateCall('video'); }
 async function startAudioCall() { await _initiateCall('audio'); }
 
 async function _initiateCall(type) {
-  if (!chatState.activeContact) return;
+  if (!chatState.activeContact && !chatState.activeGroup) return;
   _callType       = type;
   _callContactId  = chatState.activeContact.id;
   const contact   = chatState.activeContact;
@@ -4361,7 +4402,7 @@ window.renderChatList = function() {
         </div>
       </div>`;
     }
-    return `<div class="chat-contact-item${isActive?' active':''}${!item.hasPhone?' no-phone':''}" onclick="${item.hasPhone?`openChatThread('${item.phone}','${item.id}')`:''}" title="${!item.hasPhone?'No phone number':''}">
+    return `<div class="chat-contact-item${isActive?' active':''}" onclick="openChatContact('${item.phone}','${item.id}',${item.hasPhone})" title="${!item.hasPhone?'No phone — click for video call':''}">
       <div class="chat-contact-avatar" style="background:${item.color}">${item.name.charAt(0).toUpperCase()}</div>
       <div class="chat-contact-info">
         <div class="chat-contact-name">${item.name}</div>
