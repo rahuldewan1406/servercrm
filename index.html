@@ -270,6 +270,7 @@
         <h1>Accounts &amp; Contacts</h1>
         <div class="btn-group">
           <button class="btn-secondary-sm" onclick="toggleContactView()" id="contactViewToggle">⊞ Grid</button>
+          <button class="btn-secondary-sm" onclick="openModal('bulkUploadModal')">⬆ Bulk Upload</button>
           <button class="btn-primary-sm" onclick="openModal('contactModal')">+ New Contact</button>
         </div>
       </div>
@@ -929,6 +930,84 @@
     </form>
   </dialog>
 
+
+
+  <!-- Bulk Upload Contacts Modal -->
+  <dialog id="bulkUploadModal" class="modal-dialog modal-lg" style="max-width:700px">
+    <div class="modal-header">
+      <h3>⬆ Bulk Upload Contacts</h3>
+      <button class="modal-close" onclick="closeModal('bulkUploadModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="bulk-upload-steps">
+        <div class="bulk-step active" id="bStep1"><span class="bulk-step-num">1</span> Upload File</div>
+        <div class="bulk-step-arrow">›</div>
+        <div class="bulk-step" id="bStep2"><span class="bulk-step-num">2</span> Map Columns</div>
+        <div class="bulk-step-arrow">›</div>
+        <div class="bulk-step" id="bStep3"><span class="bulk-step-num">3</span> Preview &amp; Import</div>
+      </div>
+      <!-- Step 1 -->
+      <div id="bulkStep1" class="bulk-step-content">
+        <div class="bulk-drop-zone" id="bulkDropZone"
+          onclick="q('bulkFileInput').click()"
+          ondragover="bulkDragOver(event)"
+          ondragleave="bulkDragLeave(event)"
+          ondrop="bulkFileDrop(event)">
+          <div class="bulk-drop-icon">📊</div>
+          <div class="bulk-drop-label">Drop your CSV or Excel file here</div>
+          <div class="bulk-drop-sub">or click to browse · Supports .csv, .xlsx, .xls</div>
+          <input type="file" id="bulkFileInput" class="hidden" accept=".csv,.xlsx,.xls" onchange="bulkFileSelect(event)" />
+        </div>
+        <div class="bulk-template-bar">
+          <span class="bulk-template-label">📥 Don't have a file?</span>
+          <button class="cca-btn" onclick="downloadContactTemplate()">⬇ Download CSV Template</button>
+          <button class="cca-btn" onclick="downloadContactTemplateSample()">⬇ Download Sample</button>
+        </div>
+        <div class="bulk-format-guide">
+          <div class="bulk-format-title">Expected columns (in any order):</div>
+          <div class="bulk-format-cols">
+            <span class="bulk-col-chip required">name *</span>
+            <span class="bulk-col-chip required">email *</span>
+            <span class="bulk-col-chip">phone</span>
+            <span class="bulk-col-chip">company</span>
+            <span class="bulk-col-chip">location</span>
+            <span class="bulk-col-chip">gender</span>
+            <span class="bulk-col-chip">age</span>
+            <span class="bulk-col-chip">secondary_email</span>
+          </div>
+          <div style="font-size:.75rem;color:var(--text-3);margin-top:.4rem">* Required fields</div>
+        </div>
+      </div>
+      <!-- Step 2 -->
+      <div id="bulkStep2" class="bulk-step-content hidden">
+        <div class="bulk-file-info" id="bulkFileInfo"></div>
+        <div class="bulk-map-table-wrap">
+          <table class="bulk-map-table">
+            <thead><tr><th>Your Column</th><th>Sample Data</th><th>Maps To (CRM Field)</th><th>Status</th></tr></thead>
+            <tbody id="bulkMapBody"></tbody>
+          </table>
+        </div>
+        <div class="bulk-map-note"><b>Tip:</b> Auto-mapping detected your columns. Adjust if needed.</div>
+      </div>
+      <!-- Step 3 -->
+      <div id="bulkStep3" class="bulk-step-content hidden">
+        <div id="bulkPreviewStats" class="bulk-preview-stats"></div>
+        <div class="bulk-preview-wrap">
+          <table class="data-table bulk-import-table" id="bulkImportTable">
+            <thead id="bulkImportHead"></thead>
+            <tbody id="bulkImportBody"></tbody>
+          </table>
+        </div>
+        <div id="bulkImportErrors" class="bulk-import-errors hidden"></div>
+      </div>
+      <p id="bulkUploadError" style="color:var(--rose);font-size:.8rem;min-height:1rem;margin-top:.5rem"></p>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn-modal-secondary" onclick="closeModal('bulkUploadModal')">Cancel</button>
+      <button type="button" id="bulkBackBtn" class="btn-secondary-sm hidden" onclick="bulkGoBack()">‹ Back</button>
+      <button type="button" id="bulkNextBtn" class="btn-modal-primary" onclick="bulkNext()" disabled>Next ›</button>
+    </div>
+  </dialog>
 
   <!-- Bulk Contact Update Modal -->
   <dialog id="bulkUpdateModal" class="modal-dialog modal-lg">

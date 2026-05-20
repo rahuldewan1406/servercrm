@@ -4962,3 +4962,355 @@ function startGroupCall(groupId) {
   pushNotif('Group call','Group video calls require a media server. Use individual calls for now.','📹','info');
 }
 
+
+// ══════════════════════════════════════════════════════════════════
+//  BULK UPLOAD CONTACTS
+// ══════════════════════════════════════════════════════════════════
+
+// ── State ─────────────────────────────────────────────────────────
+let _bulkRawData    = [];   // raw rows from file
+let _bulkHeaders    = [];   // headers from file
+let _bulkMapping    = {};   // { crmField: fileColumn }
+let _bulkParsed     = [];   // validated rows
+let _bulkStep       = 1;
+
+const CRM_FIELDS = [
+  { key:'name',            label:'Full Name',       required:true  },
+  { key:'email',           label:'Primary Email',   required:true  },
+  { key:'phone',           label:'Phone',           required:false },
+  { key:'company',         label:'Company',         required:false },
+  { key:'location',        label:'Location',        required:false },
+  { key:'gender',          label:'Gender',          required:false },
+  { key:'age',             label:'Age',             required:false },
+  { key:'secondaryEmail',  label:'Secondary Email', required:false },
+];
+
+// Auto-map common column name variations
+const FIELD_ALIASES = {
+  name:           ['name','full name','fullname','contact name','contact','person'],
+  email:          ['email','email address','primary email','e-mail','mail'],
+  phone:          ['phone','mobile','phone number','mobile number','contact number','cell'],
+  company:        ['company','organization','organisation','org','company name','firm'],
+  location:       ['location','city','address','place','city state','area'],
+  gender:         ['gender','sex'],
+  age:            ['age','years','dob'],
+  secondaryEmail: ['secondary email','secondary_email','email 2','alt email','alternate email'],
+};
+
+// ── Open / reset modal ────────────────────────────────────────────
+function openBulkUploadModal() {
+  _bulkRawData = []; _bulkHeaders = []; _bulkMapping = {}; _bulkParsed = []; _bulkStep = 1;
+  setBulkStep(1);
+  q('bulkUploadError').textContent = '';
+  const dropZone = q('bulkDropZone');
+  if (dropZone) dropZone.classList.remove('drag-over');
+  q('bulkFileInput').value = '';
+  q('bulkNextBtn').disabled = true;
+  openModal('bulkUploadModal');
+}
+
+// ── Step navigation ───────────────────────────────────────────────
+function setBulkStep(step) {
+  _bulkStep = step;
+  [1,2,3].forEach(i => {
+    const el   = q(`bStep${i}`);
+    const cont = q(`bulkStep${i}`);
+    if (!el || !cont) return;
+    el.classList.remove('active','done');
+    cont.classList.add('hidden');
+    if (i < step)  el.classList.add('done');
+    if (i === step){ el.classList.add('active'); cont.classList.remove('hidden'); }
+  });
+  const backBtn = q('bulkBackBtn');
+  const nextBtn = q('bulkNextBtn');
+  if (backBtn) backBtn.classList.toggle('hidden', step === 1);
+  if (nextBtn) {
+    nextBtn.textContent = step === 3 ? '⬆ Import Contacts' : 'Next ›';
+    nextBtn.disabled    = step === 1 && !_bulkRawData.length;
+  }
+}
+
+function bulkNext() {
+  if (_bulkStep === 1) { buildMappingUI();  setBulkStep(2); }
+  else if (_bulkStep === 2) { buildPreview(); setBulkStep(3); }
+  else if (_bulkStep === 3) { importContacts(); }
+}
+
+function bulkGoBack() {
+  if (_bulkStep > 1) setBulkStep(_bulkStep - 1);
+}
+
+// ── File handling ─────────────────────────────────────────────────
+function bulkDragOver(e)  { e.preventDefault(); q('bulkDropZone').classList.add('drag-over'); }
+function bulkDragLeave(e) { q('bulkDropZone').classList.remove('drag-over'); }
+function bulkFileDrop(e)  { e.preventDefault(); q('bulkDropZone').classList.remove('drag-over'); processFile(e.dataTransfer.files[0]); }
+function bulkFileSelect(e){ processFile(e.target.files[0]); }
+
+function processFile(file) {
+  if (!file) return;
+  const errEl = q('bulkUploadError');
+  const ext   = file.name.split('.').pop().toLowerCase();
+
+  if (!['csv','xlsx','xls'].includes(ext)) {
+    if (errEl) errEl.textContent = 'Unsupported file type. Please upload a .csv or .xlsx file.';
+    return;
+  }
+  if (errEl) errEl.textContent = '';
+
+  const reader = new FileReader();
+
+  if (ext === 'csv') {
+    reader.onload = e => {
+      parseCSV(e.target.result, file.name);
+    };
+    reader.readAsText(file);
+  } else {
+    // Excel — use SheetJS if available, else prompt CSV
+    reader.onload = e => {
+      try {
+        // Try to use SheetJS (loaded in artifacts context)
+        if (typeof XLSX !== 'undefined') {
+          const wb   = XLSX.read(e.target.result, { type:'binary' });
+          const ws   = wb.Sheets[wb.SheetNames[0]];
+          const data = XLSX.utils.sheet_to_csv(ws);
+          parseCSV(data, file.name);
+        } else {
+          if (errEl) errEl.textContent = 'Excel support requires the app to be served with SheetJS. Please use CSV format instead.';
+        }
+      } catch(err) {
+        if (errEl) errEl.textContent = 'Failed to read Excel file: ' + err.message + '. Try saving as CSV.';
+      }
+    };
+    reader.readAsBinaryString(file);
+  }
+}
+
+// ── CSV Parser ────────────────────────────────────────────────────
+function parseCSV(text, filename) {
+  // Handle different line endings and quoted fields
+  const lines = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n').filter(l=>l.trim());
+  if (lines.length < 2) {
+    q('bulkUploadError').textContent = 'File has no data rows. Need at least a header row and one data row.';
+    return;
+  }
+
+  function splitCSVLine(line) {
+    const result = []; let current = ''; let inQuotes = false;
+    for (let i=0; i<line.length; i++) {
+      const ch = line[i];
+      if (ch==='"') { inQuotes=!inQuotes; }
+      else if (ch===',' && !inQuotes) { result.push(current.trim()); current=''; }
+      else current += ch;
+    }
+    result.push(current.trim());
+    return result;
+  }
+
+  _bulkHeaders = splitCSVLine(lines[0]).map(h=>h.replace(/^"|"$/g,'').trim());
+  _bulkRawData = lines.slice(1).filter(l=>l.trim()).map(line => {
+    const vals = splitCSVLine(line);
+    const row  = {};
+    _bulkHeaders.forEach((h,i) => row[h] = (vals[i]||'').replace(/^"|"$/g,'').trim());
+    return row;
+  });
+
+  // Auto-detect mapping
+  _bulkMapping = {};
+  _bulkHeaders.forEach(col => {
+    const colLower = col.toLowerCase().trim();
+    Object.entries(FIELD_ALIASES).forEach(([field, aliases]) => {
+      if (!_bulkMapping[field] && aliases.some(a=>colLower===a||colLower.includes(a))) {
+        _bulkMapping[field] = col;
+      }
+    });
+  });
+
+  // Update drop zone UI
+  const dropZone = q('bulkDropZone');
+  if (dropZone) {
+    dropZone.innerHTML = `
+      <div class="bulk-drop-icon">✅</div>
+      <div class="bulk-drop-label">${filename}</div>
+      <div class="bulk-drop-sub">${_bulkRawData.length} rows · ${_bulkHeaders.length} columns detected</div>`;
+  }
+
+  q('bulkNextBtn').disabled = false;
+  q('bulkUploadError').textContent = '';
+}
+
+// ── Column mapping UI ─────────────────────────────────────────────
+function buildMappingUI() {
+  const fileInfo = q('bulkFileInfo');
+  if (fileInfo) {
+    fileInfo.innerHTML = `📊 ${_bulkRawData.length} rows detected · ${_bulkHeaders.length} columns · Auto-mapped ${Object.keys(_bulkMapping).length} fields`;
+  }
+
+  const tbody = q('bulkMapBody');
+  if (!tbody) return;
+
+  const fieldOpts = `<option value="">— Skip —</option>` +
+    CRM_FIELDS.map(f=>`<option value="${f.key}">${f.label}${f.required?' *':''}</option>`).join('');
+
+  tbody.innerHTML = _bulkHeaders.map(col => {
+    const sample     = _bulkRawData.slice(0,3).map(r=>r[col]).filter(Boolean).join(', ');
+    const mappedTo   = Object.entries(_bulkMapping).find(([k,v])=>v===col)?.[0] || '';
+    const fieldOpsHtml = `<option value="">— Skip —</option>` +
+      CRM_FIELDS.map(f=>`<option value="${f.key}" ${mappedTo===f.key?'selected':''}>${f.label}${f.required?' *':''}</option>`).join('');
+    const statusHtml = mappedTo
+      ? `<span class="bulk-col-status-ok">✓ ${CRM_FIELDS.find(f=>f.key===mappedTo)?.label||mappedTo}</span>`
+      : `<span class="bulk-col-status-skip">Skipped</span>`;
+    return `<tr>
+      <td><strong>${col}</strong></td>
+      <td><span class="bulk-sample-val" title="${sample}">${sample||'—'}</span></td>
+      <td><select onchange="updateBulkMapping('${col}',this.value)">${fieldOpsHtml}</select></td>
+      <td id="bms_${col.replace(/\W/g,'_')}">${statusHtml}</td>
+    </tr>`;
+  }).join('');
+}
+
+function updateBulkMapping(col, field) {
+  // Remove any existing mapping for this field
+  Object.keys(_bulkMapping).forEach(k=>{ if(_bulkMapping[k]===col) delete _bulkMapping[k]; });
+  if (field) _bulkMapping[field] = col;
+  const statusEl = q(`bms_${col.replace(/\W/g,'_')}`);
+  if (statusEl) {
+    statusEl.innerHTML = field
+      ? `<span class="bulk-col-status-ok">✓ ${CRM_FIELDS.find(f=>f.key===field)?.label||field}</span>`
+      : `<span class="bulk-col-status-skip">Skipped</span>`;
+  }
+}
+
+// ── Build preview ─────────────────────────────────────────────────
+function buildPreview() {
+  const existingEmails = new Set(state.contacts.map(c=>c.email?.toLowerCase()));
+  _bulkParsed = [];
+
+  _bulkRawData.forEach((row, i) => {
+    const contact = {};
+    Object.entries(_bulkMapping).forEach(([field, col]) => {
+      contact[field] = row[col]||'';
+    });
+
+    // Validate
+    const errors = [];
+    if (!contact.name?.trim())  errors.push('Name required');
+    else if (contact.name.trim().length < 2) errors.push('Name too short');
+    if (!contact.email?.trim()) errors.push('Email required');
+    else if (!isEmail(contact.email)) errors.push('Invalid email');
+    if (contact.phone && !isValidPhone(contact.phone)) errors.push('Invalid phone');
+    if (contact.age && (isNaN(contact.age)||Number(contact.age)<1||Number(contact.age)>120)) errors.push('Invalid age');
+
+    const isDupe = contact.email && existingEmails.has(contact.email.toLowerCase());
+    _bulkParsed.push({ row:i+1, contact, errors, isDupe, status: errors.length?'invalid': isDupe?'dupe':'valid' });
+  });
+
+  // Stats
+  const valid   = _bulkParsed.filter(r=>r.status==='valid').length;
+  const invalid = _bulkParsed.filter(r=>r.status==='invalid').length;
+  const dupes   = _bulkParsed.filter(r=>r.status==='dupe').length;
+
+  const statsEl = q('bulkPreviewStats');
+  if (statsEl) statsEl.innerHTML = `
+    <span class="bulk-stat-chip bulk-stat-total">Total: ${_bulkParsed.length}</span>
+    <span class="bulk-stat-chip bulk-stat-valid">✓ Ready to import: ${valid}</span>
+    ${invalid?`<span class="bulk-stat-chip bulk-stat-invalid">✗ Errors: ${invalid}</span>`:''}
+    ${dupes  ?`<span class="bulk-stat-chip bulk-stat-dupe">⚠ Duplicates: ${dupes}</span>`:''}`;
+
+  // Table
+  const head = q('bulkImportHead');
+  const body = q('bulkImportBody');
+  const cols = ['Row','Name','Email','Phone','Company','Location','Status'];
+  if (head) head.innerHTML = `<tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr>`;
+  if (body) body.innerHTML = _bulkParsed.slice(0,50).map(r=>`
+    <tr class="row-${r.status}">
+      <td>${r.row}</td>
+      <td>${r.contact.name||'—'}</td>
+      <td>${r.contact.email||'—'}</td>
+      <td>${r.contact.phone||'—'}</td>
+      <td>${r.contact.company||'—'}</td>
+      <td>${r.contact.location||'—'}</td>
+      <td>
+        ${r.status==='valid'  ?'<span class="bulk-col-status-ok">✓ OK</span>':''}
+        ${r.status==='dupe'   ?'<span style="color:#d97706;font-weight:600">⚠ Duplicate</span>':''}
+        ${r.status==='invalid'?`<span class="row-error-msg">✗ ${r.errors.join(', ')}</span>`:''}
+      </td>
+    </tr>`).join('');
+
+  if (_bulkParsed.length > 50) {
+    body.innerHTML += `<tr><td colspan="7" style="text-align:center;color:var(--text-3);font-size:.78rem">…showing first 50 of ${_bulkParsed.length} rows</td></tr>`;
+  }
+
+  const nextBtn = q('bulkNextBtn');
+  if (nextBtn) nextBtn.disabled = valid === 0;
+
+  const errEl = q('bulkImportErrors');
+  if (errEl) {
+    if (invalid > 0) {
+      errEl.innerHTML = `<strong>⚠ ${invalid} row${invalid>1?'s':''} have errors</strong> and will be skipped. Only the ${valid} valid row${valid>1?'s':''} will be imported.`;
+      errEl.classList.remove('hidden');
+    } else errEl.classList.add('hidden');
+  }
+}
+
+// ── Import ────────────────────────────────────────────────────────
+async function importContacts() {
+  const toImport = _bulkParsed.filter(r=>r.status==='valid');
+  if (!toImport.length) { q('bulkUploadError').textContent='No valid rows to import.'; return; }
+  if (!state.session) { q('bulkUploadError').textContent='Please log in first.'; return; }
+
+  const btn = q('bulkNextBtn');
+  if (btn) { btn.disabled=true; btn.textContent='Importing…'; }
+
+  let imported=0, failed=0;
+  for (const {contact} of toImport) {
+    try {
+      const ok = await apiCreate('contacts', {
+        name:           contact.name.trim(),
+        email:          contact.email.trim(),
+        secondaryEmail: contact.secondaryEmail||'',
+        phone:          contact.phone ? normalisePhoneDisplay(contact.phone) : '',
+        company:        contact.company||'',
+        gender:         contact.gender||'',
+        age:            contact.age ? Number(contact.age) : null,
+        location:       contact.location||'',
+      });
+      if (ok) imported++;
+      else failed++;
+    } catch(e) { failed++; }
+  }
+
+  // Refresh contacts
+  const r = await apiFetch('/contacts');
+  if (r && r.ok) state.contacts = await r.json();
+
+  if (btn) { btn.disabled=false; btn.textContent='⬆ Import Contacts'; }
+  closeModal('bulkUploadModal');
+  renderAll();
+
+  pushNotif(
+    `Bulk import complete`,
+    `${imported} contact${imported!==1?'s':''} imported${failed?`, ${failed} failed`:''}`,
+    '📊', imported>0?'success':'warning'
+  );
+}
+
+// ── CSV template download ─────────────────────────────────────────
+function downloadContactTemplate() {
+  const csv = 'name,email,phone,company,location,gender,age,secondary_email';
+  const blob = new Blob([csv],{type:'text/csv'});
+  const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='contact_upload_template.csv'; a.click();
+}
+
+function downloadContactTemplateSample() {
+  const csv = [
+    'name,email,phone,company,location,gender,age,secondary_email',
+    'Rahul Sharma,rahul@nhai.gov.in,9876543210,NHAI Delhi,New Delhi,Male,35,rahul.sharma@gmail.com',
+    'Priya Patel,priya@infra.in,9123456789,InfraTech Ltd,Mumbai Maharashtra,Female,28,',
+    'Amit Kumar,amit@nhdp.in,8765432109,NHDP Pune,Pune Maharashtra,Male,42,',
+  ].join('\n');
+  const blob = new Blob([csv],{type:'text/csv'});
+  const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='contact_upload_sample.csv'; a.click();
+}
+
