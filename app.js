@@ -341,6 +341,7 @@ async function login(e) {
     state.refreshToken = d.refreshToken;
     state.session      = d.user;
     state.permissions  = new Set(d.permissions);
+    writeAudit('LOGIN','auth',`${d.user.name} logged in`);
     // Hide login screen with animation
     const screen = q('loginScreen');
     if (screen) screen.classList.add('hidden');
@@ -359,6 +360,7 @@ async function login(e) {
   }
 }
 async function logout() {
+  writeAudit('LOGOUT','auth',`${state.session?.name||''} logged out`);
   if (state.refreshToken) apiFetch('/auth/logout',{method:'POST',body:JSON.stringify({refreshToken:state.refreshToken})}).catch(()=>{});
   Object.assign(state, { session:null, accessToken:null, refreshToken:null, permissions:new Set(), contacts:[], leads:[], tickets:[] });
   // Show login screen again
@@ -409,6 +411,7 @@ function switchTab(id) {
   if (id==='portal-admin') renderPortalAdmin();
   if (id==='approvals')    renderApprovals();
   if (id==='performance')  renderPerformance();
+  if (id==='admin')        renderAdmin();
 }
 function switchProjectView(view) {
   document.querySelectorAll('.project-view').forEach(v=>v.classList.remove('active'));
@@ -505,6 +508,7 @@ async function saveContact() {
     closeModal('contactModal');
     const r = await apiFetch('/contacts');
     if (r && r.ok) state.contacts = await r.json();
+    writeAudit('CREATE','contacts',`Created contact: ${name} (${email})`);
     renderAll();
   } else {
     if (errEl) errEl.textContent='Save failed — is the API server running on port 3002?';
@@ -598,6 +602,7 @@ function renderSession() {
   q('userChip').classList.toggle('hidden', !li);
   // Show/hide chat button based on login state
   const chatWrap = q('chatBellWrap');
+  syncAdminTab();
   if (chatWrap) {
     if (li) {
       chatWrap.classList.remove('hidden');
@@ -5776,5 +5781,523 @@ function deleteKpi(id) {
   state.kpis = state.kpis.filter(x=>x.id!==id);
   saveKpiState();
   renderPerformance();
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+//  ADMIN CONTROL PANEL
+// ══════════════════════════════════════════════════════════════════
+
+// ── Audit log ─────────────────────────────────────────────────────
+const auditLog = JSON.parse(localStorage.getItem('crm_audit_log') || '[]');
+function writeAudit(action, resource, detail) {
+  auditLog.unshift({
+    id:       crypto.randomUUID(),
+    action,           // CREATE | UPDATE | DELETE | LOGIN | LOGOUT
+    resource,         // contacts | leads | users | …
+    detail,
+    user:     state.session?.name || 'System',
+    email:    state.session?.email || '',
+    time:     new Date().toISOString(),
+  });
+  if (auditLog.length > 500) auditLog.length = 500;
+  localStorage.setItem('crm_audit_log', JSON.stringify(auditLog));
+}
+
+// ── Admin state ────────────────────────────────────────────────────
+let _adminUsers         = [];
+let _editingUserId      = null;
+let _adminCurrentTab    = 'users';
+
+// ── Show admin tab in nav for admins only ──────────────────────────
+function syncAdminTab() {
+  const tab = q('adminNavTab');
+  if (!tab) return;
+  const isAdmin = can('users.delete');
+  tab.classList.toggle('hidden', !isAdmin);
+  tab.style.display = isAdmin ? '' : 'none';
+}
+
+// ── Tab switching ──────────────────────────────────────────────────
+function switchAdminTab(tab, el) {
+  _adminCurrentTab = tab;
+  document.querySelectorAll('.admin-tab').forEach(b=>b.classList.remove('active'));
+  if (el) el.classList.add('active');
+  document.querySelectorAll('.admin-tab-content').forEach(c=>c.classList.add('hidden'));
+  const content = q(`adminTab-${tab}`);
+  if (content) content.classList.remove('hidden');
+  // Render relevant content
+  if (tab==='users')            renderAdminUsers();
+  if (tab==='roles')            renderAdminRoles();
+  if (tab==='contacts-admin')   renderAdminContacts();
+  if (tab==='accounts-admin')   renderAdminAccounts();
+  if (tab==='audit')            renderAuditLog();
+  if (tab==='system')           renderAdminSystem();
+}
+
+// ── Render Admin page ──────────────────────────────────────────────
+async function renderAdmin() {
+  syncAdminTab();
+  if (!can('users.delete')) {
+    const sec = q('admin');
+    if (sec) sec.innerHTML = `<div style="text-align:center;padding:4rem;color:var(--rose)"><div style="font-size:2rem">🔒</div><p>Admin access required.</p></div>`;
+    return;
+  }
+  // Load users from API
+  try {
+    const r = await apiFetch('/users');
+    if (r && r.ok) _adminUsers = await r.json();
+  } catch(e) { _adminUsers = []; }
+  // Render current tab
+  switchAdminTab(_adminCurrentTab, document.querySelector('.admin-tab.active'));
+}
+
+// ── User Management ────────────────────────────────────────────────
+function renderAdminUsers() {
+  const search = (q('adminUserSearch')?.value||'').toLowerCase();
+  const users  = _adminUsers.filter(u=>
+    !search || u.name.toLowerCase().includes(search) || u.email.toLowerCase().includes(search)
+  );
+
+  // Stats
+  const statsEl = q('adminUserStats');
+  if (statsEl) {
+    const roleCount = {};
+    _adminUsers.forEach(u=>{ const r=u.roles?.[0]||'viewer'; roleCount[r]=(roleCount[r]||0)+1; });
+    statsEl.innerHTML = `
+      <div class="admin-stat-card"><div class="admin-stat-val">${_adminUsers.length}</div><div class="admin-stat-label">Total Users</div></div>
+      <div class="admin-stat-card"><div class="admin-stat-val" style="color:#16a34a">${_adminUsers.filter(u=>u.is_active!=0).length}</div><div class="admin-stat-label">Active</div></div>
+      ${Object.entries(roleCount).map(([r,c])=>`<div class="admin-stat-card"><div class="admin-stat-val" style="color:${ROLE_DEFINITIONS[r]?.color||'var(--text)'}">${c}</div><div class="admin-stat-label">${ROLE_DEFINITIONS[r]?.label||r}</div></div>`).join('')}`;
+  }
+
+  const tableEl = q('adminUserTable');
+  if (!tableEl) return;
+
+  const cols = ['','Name & Email','Role','Status','Created','Actions'];
+  tableEl.innerHTML = `
+    <div class="admin-table-row admin-table-head users-grid">
+      ${cols.map(c=>`<div>${c}</div>`).join('')}
+    </div>
+    ${users.map(u=>{
+      const role    = u.roles?.[0] || 'viewer';
+      const roleDef = ROLE_DEFINITIONS[role] || { label:role, icon:'👤', color:'#64748b', bg:'#f1f5f9' };
+      const active  = u.is_active !== 0;
+      const color   = avatarColor(u.name);
+      const isSelf  = u.id === state.session?.id;
+      return `<div class="admin-table-row users-grid">
+        <div><div class="admin-user-avatar" style="background:${color}">${u.name.charAt(0).toUpperCase()}</div></div>
+        <div>
+          <div class="admin-user-name">${u.name}${isSelf?' <span style="font-size:.65rem;background:#dbeafe;color:#1e40af;padding:1px 5px;border-radius:3px">You</span>':''}</div>
+          <div class="admin-user-email">${u.email}</div>
+        </div>
+        <div>
+          <span style="background:${roleDef.bg};color:${roleDef.color};padding:3px 10px;border-radius:20px;font-size:.73rem;font-weight:700">
+            ${roleDef.icon} ${roleDef.label}
+          </span>
+        </div>
+        <div>
+          <span class="admin-status-badge ${active?'admin-status-active':'admin-status-suspended'}">
+            ${active?'● Active':'● Suspended'}
+          </span>
+        </div>
+        <div style="font-size:.75rem;color:var(--text-3)">${u.created_at?fmtDate(u.created_at):'—'}</div>
+        <div class="admin-row-actions">
+          ${!isSelf?`<button class="cca-btn" onclick="openEditUser('${u.id}')">✏ Edit</button>`:''}
+          ${!isSelf?`<button class="cca-btn" onclick="toggleUserStatus('${u.id}',${active})">${active?'Suspend':'Activate'}</button>`:''}
+          ${!isSelf?`<button class="cca-btn cca-danger" onclick="deleteAdminUser('${u.id}','${u.name}')">🗑</button>`:''}
+        </div>
+      </div>`;
+    }).join('')}`;
+
+  if (!users.length) {
+    tableEl.innerHTML += `<div style="padding:2rem;text-align:center;color:var(--text-3)">No users found.</div>`;
+  }
+}
+
+async function createAdminUser() {
+  const name     = q('newUserName')?.value.trim();
+  const email    = q('newUserEmail')?.value.trim();
+  const password = q('newUserPassword')?.value;
+  const role     = q('newUserRole')?.value;
+  const errEl    = q('newUserError');
+  if (!name)              { if(errEl) errEl.textContent='Name required.'; return; }
+  if (!email||!isEmail(email)) { if(errEl) errEl.textContent='Valid email required.'; return; }
+  if (!password||password.length<6) { if(errEl) errEl.textContent='Password must be at least 6 characters.'; return; }
+  if (errEl) errEl.textContent='';
+
+  const r = await apiFetch('/users', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ name, email, password, role })
+  });
+  if (r?.ok) {
+    const created = await r.json();
+    writeAudit('CREATE','users',`Created user ${name} (${email}) with role ${role}`);
+    closeModal('newUserModal');
+    ['newUserName','newUserEmail','newUserPassword'].forEach(id=>{const el=q(id);if(el)el.value='';});
+    pushNotif(`User created: ${name}`,`Role: ${role} · ${email}`,'👤','success');
+    // Refresh users
+    const ru = await apiFetch('/users'); if(ru?.ok) _adminUsers = await ru.json();
+    renderAdminUsers();
+  } else {
+    const d = await r?.json().catch(()=>({}));
+    if(errEl) errEl.textContent = d?.message || 'Failed to create user.';
+  }
+}
+
+function openEditUser(userId) {
+  const u = _adminUsers.find(x=>x.id===userId);
+  if (!u) return;
+  _editingUserId = userId;
+  const roleDef = ROLE_DEFINITIONS[u.roles?.[0]||'viewer'];
+  q('editUserInfo').innerHTML = `<strong>${u.name}</strong> · ${u.email}`;
+  q('editUserRole').value   = u.roles?.[0] || 'viewer';
+  q('editUserActive').value = String(u.is_active??1);
+  q('editUserPassword').value = '';
+  q('editUserError').textContent = '';
+  openModal('editUserModal');
+}
+
+async function saveEditUser() {
+  const role     = q('editUserRole')?.value;
+  const active   = q('editUserActive')?.value;
+  const password = q('editUserPassword')?.value;
+  const errEl    = q('editUserError');
+  if (password && password.length < 6) { if(errEl) errEl.textContent='Password must be at least 6 characters.'; return; }
+  if (errEl) errEl.textContent='';
+
+  // Update role
+  const r1 = await apiFetch(`/users/${_editingUserId}/roles`, {
+    method:'PUT', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ roles:[role] })
+  });
+
+  const u = _adminUsers.find(x=>x.id===_editingUserId);
+  writeAudit('UPDATE','users',`Updated user ${u?.name}: role=${role}, active=${active}`);
+  closeModal('editUserModal');
+  pushNotif(`User updated`,`${u?.name} → ${ROLE_DEFINITIONS[role]?.label||role}`,'✏','success');
+  const ru = await apiFetch('/users'); if(ru?.ok) _adminUsers = await ru.json();
+  renderAdminUsers();
+}
+
+async function toggleUserStatus(userId, currentlyActive) {
+  const u = _adminUsers.find(x=>x.id===userId);
+  if (!confirm(`${currentlyActive?'Suspend':'Activate'} user ${u?.name}?`)) return;
+  // Status toggle via API (extend server if needed; for now update locally)
+  const idx = _adminUsers.findIndex(x=>x.id===userId);
+  if (idx !== -1) { _adminUsers[idx].is_active = currentlyActive ? 0 : 1; }
+  writeAudit('UPDATE','users',`${currentlyActive?'Suspended':'Activated'} user ${u?.name}`);
+  pushNotif(`User ${currentlyActive?'suspended':'activated'}`, u?.name||'', currentlyActive?'🔒':'✅','info');
+  renderAdminUsers();
+}
+
+async function deleteAdminUser(userId, name) {
+  if (!confirm(`Permanently delete user "${name}"? This cannot be undone.`)) return;
+  const r = await apiFetch(`/users/${userId}`, { method:'DELETE' });
+  writeAudit('DELETE','users',`Deleted user ${name}`);
+  const ru = await apiFetch('/users'); if(ru?.ok) _adminUsers = await ru.json();
+  renderAdminUsers();
+  pushNotif(`User deleted`,name,'🗑','info');
+}
+
+// ── Roles & Permissions ────────────────────────────────────────────
+function renderAdminRoles() {
+  const rolesGrid = q('adminRolesGrid');
+  if (rolesGrid) {
+    rolesGrid.innerHTML = Object.entries(ROLE_DEFINITIONS).map(([role, def]) => {
+      const userCount = _adminUsers.filter(u=>u.roles?.includes(role)).length;
+      return `<div class="admin-role-card" style="border-top:3px solid ${def.color}">
+        <div class="admin-role-header">
+          <div class="admin-role-icon" style="background:${def.bg}">${def.icon}</div>
+          <div>
+            <div class="admin-role-name" style="color:${def.color}">${def.label}</div>
+            <div style="font-size:.72rem;color:var(--text-3)">${userCount} user${userCount!==1?'s':''}</div>
+          </div>
+        </div>
+        <div class="admin-role-desc">${def.desc}</div>
+        <div class="admin-role-perms">
+          ${def.permissions.map(p=>`<span class="admin-perm-chip">${p}</span>`).join('')}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // Permission matrix
+  const matrixEl = q('adminPermMatrix');
+  if (!matrixEl) return;
+
+  const modules = ['contacts','leads','tickets','projects','documents','reports','users','approvals'];
+  const actions = ['read','create','update','delete'];
+  const roleKeys = Object.keys(ROLE_DEFINITIONS);
+
+  const hasPermission = (role, module, action) => {
+    const def = ROLE_DEFINITIONS[role];
+    const perm = `${module}.${action}`;
+    const modPerm = module;
+    // Check full permission or module-level
+    return def?.permissions.some(p=>p===perm||p===modPerm||(action==='read'&&(p===`${module}_read`||p===modPerm)));
+  };
+
+  matrixEl.innerHTML = `
+    <table class="perm-matrix-table">
+      <thead>
+        <tr>
+          <th>Module</th>
+          <th>Action</th>
+          ${roleKeys.map(r=>`<th class="role-col">${ROLE_DEFINITIONS[r].icon} ${ROLE_DEFINITIONS[r].label}</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${modules.flatMap(mod=>
+          actions.map((act,i)=>`
+            <tr>
+              ${i===0?`<td class="perm-module" rowspan="${actions.length}" style="vertical-align:top;padding-top:.55rem">${mod.charAt(0).toUpperCase()+mod.slice(1)}</td>`:''}
+              <td class="perm-action">${act}</td>
+              ${roleKeys.map(role=>`<td class="perm-cell">${hasPermission(role,mod,act)?'<span class="perm-check">✓</span>':'<span class="perm-cross">—</span>'}</td>`).join('')}
+            </tr>`)
+        ).join('')}
+      </tbody>
+    </table>`;
+}
+
+// ── Contacts Admin ─────────────────────────────────────────────────
+function renderAdminContacts() {
+  const search      = (q('adminContactSearch')?.value||'').toLowerCase();
+  const ownerFilter = q('adminContactOwnerFilter')?.value||'';
+  const contacts    = state.contacts.filter(c=>
+    (!search || c.name.toLowerCase().includes(search) || c.email.toLowerCase().includes(search)) &&
+    (!ownerFilter || c.owner_user_id === ownerFilter)
+  );
+
+  // Owner filter dropdown
+  const owners = [...new Set(_adminUsers.map(u=>u.id))];
+  const ownerSel = q('adminContactOwnerFilter');
+  if (ownerSel && ownerSel.options.length <= 1) {
+    _adminUsers.forEach(u=>{ const o=document.createElement('option'); o.value=u.id; o.textContent=u.name; ownerSel.appendChild(o); });
+  }
+
+  // Stats
+  const statsEl = q('adminContactStats');
+  if (statsEl) {
+    const withEmail = state.contacts.filter(c=>c.email).length;
+    const withPhone = state.contacts.filter(c=>c.phone).length;
+    const withCompany = state.contacts.filter(c=>c.company).length;
+    statsEl.innerHTML = `
+      <div class="admin-stat-card"><div class="admin-stat-val">${state.contacts.length}</div><div class="admin-stat-label">Total Contacts</div></div>
+      <div class="admin-stat-card"><div class="admin-stat-val">${withEmail}</div><div class="admin-stat-label">With Email</div></div>
+      <div class="admin-stat-card"><div class="admin-stat-val">${withPhone}</div><div class="admin-stat-label">With Phone</div></div>
+      <div class="admin-stat-card"><div class="admin-stat-val">${withCompany}</div><div class="admin-stat-label">With Company</div></div>`;
+  }
+
+  const tableEl = q('adminContactTable');
+  if (!tableEl) return;
+  tableEl.innerHTML = `
+    <div class="admin-table-row admin-table-head contacts-grid">
+      <div></div><div>Name</div><div>Email / Phone</div><div>Company</div><div>Owner</div><div>Actions</div>
+    </div>
+    ${contacts.slice(0,100).map(c=>{
+      const color = avatarColor(c.name);
+      const owner = _adminUsers.find(u=>u.id===c.owner_user_id);
+      return `<div class="admin-table-row contacts-grid">
+        <div><div class="admin-user-avatar" style="background:${color};border-radius:8px">${c.name.charAt(0).toUpperCase()}</div></div>
+        <div>
+          <div class="admin-user-name">${c.name}</div>
+          <div class="admin-user-email">${c.location||'—'}</div>
+        </div>
+        <div>
+          <div style="font-size:.8rem">${c.email}</div>
+          <div class="admin-user-email">${c.phone||'—'}</div>
+        </div>
+        <div style="font-size:.8rem">${c.company||'—'}</div>
+        <div style="font-size:.75rem">
+          ${owner?`<span style="background:${ROLE_DEFINITIONS[owner.roles?.[0]||'viewer']?.bg||'#f1f5f9'};color:${ROLE_DEFINITIONS[owner.roles?.[0]||'viewer']?.color||'#64748b'};padding:2px 7px;border-radius:20px;font-size:.68rem;font-weight:600">${owner.name}</span>`:'<span style="color:var(--text-3)">Unassigned</span>'}
+        </div>
+        <div class="admin-row-actions">
+          <button class="cca-btn" onclick="switchTab('customers');openC360('${c.id}')">👁 View</button>
+          <button class="cca-btn cca-danger" onclick="adminDeleteContact('${c.id}','${c.name}')">🗑</button>
+        </div>
+      </div>`;
+    }).join('')}
+    ${contacts.length>100?`<div style="padding:.75rem;text-align:center;font-size:.78rem;color:var(--text-3)">Showing 100 of ${contacts.length} contacts</div>`:''}`;
+}
+
+async function adminDeleteContact(id, name) {
+  if (!confirm(`Delete contact "${name}"? This cannot be undone.`)) return;
+  const ok = await apiDelete('contacts', id);
+  if (ok) {
+    state.contacts = state.contacts.filter(c=>c.id!==id);
+    writeAudit('DELETE','contacts',`Admin deleted contact: ${name}`);
+    renderAdminContacts();
+    pushNotif(`Contact deleted`,name,'🗑','info');
+  }
+}
+
+function adminExportContacts() {
+  const csv = ['Name,Email,Phone,Company,Location,Gender,Age,Qualification,Designation'].concat(
+    state.contacts.map(c=>[c.name,c.email,c.phone||'',c.company||'',c.location||'',c.gender||'',c.age||'',c.qualification||'',c.designation||''].map(v=>`"${v}"`).join(','))
+  ).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=`contacts-admin-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+}
+
+function adminBulkAssignContacts() {
+  const fromSel = q('reassignFrom'); const toSel = q('reassignTo');
+  if (fromSel) fromSel.innerHTML='<option value="">— Select —</option>'+_adminUsers.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
+  if (toSel)   toSel.innerHTML  ='<option value="">— Select —</option>'+_adminUsers.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
+  openModal('bulkReassignModal');
+}
+
+async function confirmBulkReassign() {
+  const fromId = q('reassignFrom')?.value;
+  const toId   = q('reassignTo')?.value;
+  if (!fromId||!toId) { alert('Select both users.'); return; }
+  if (fromId===toId)  { alert('From and To cannot be the same user.'); return; }
+  const toReassign = state.contacts.filter(c=>c.owner_user_id===fromId);
+  if (!toReassign.length) { alert('No contacts owned by selected user.'); return; }
+  for (const c of toReassign) {
+    await apiFetch(`/contacts/${c.id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({owner_user_id:toId}) });
+    c.owner_user_id = toId;
+  }
+  const fromUser=_adminUsers.find(u=>u.id===fromId); const toUser=_adminUsers.find(u=>u.id===toId);
+  writeAudit('UPDATE','contacts',`Reassigned ${toReassign.length} contacts from ${fromUser?.name} to ${toUser?.name}`);
+  closeModal('bulkReassignModal');
+  renderAdminContacts();
+  pushNotif(`${toReassign.length} contacts reassigned`,`From ${fromUser?.name} → ${toUser?.name}`,'🔄','success');
+}
+
+// ── Accounts Admin ─────────────────────────────────────────────────
+function renderAdminAccounts() {
+  const statsEl = q('adminAccountStats');
+  const now = new Date();
+  if (statsEl) {
+    const enterprise = state.accounts.filter(a=>a.tier==='Enterprise').length;
+    const overdue    = state.accounts.filter(a=>a.renewalDate&&new Date(a.renewalDate)<now).length;
+    const due30      = state.accounts.filter(a=>a.renewalDate&&new Date(a.renewalDate)>=now&&new Date(a.renewalDate)<=new Date(Date.now()+30*86400000)).length;
+    statsEl.innerHTML = `
+      <div class="admin-stat-card"><div class="admin-stat-val">${state.accounts.length}</div><div class="admin-stat-label">Total Accounts</div></div>
+      <div class="admin-stat-card"><div class="admin-stat-val" style="color:#7c3aed">${enterprise}</div><div class="admin-stat-label">Enterprise</div></div>
+      <div class="admin-stat-card"><div class="admin-stat-val" style="color:#e11d48">${overdue}</div><div class="admin-stat-label">Overdue Renewal</div></div>
+      <div class="admin-stat-card"><div class="admin-stat-val" style="color:#d97706">${due30}</div><div class="admin-stat-label">Renewing in 30d</div></div>`;
+  }
+  const tableEl = q('adminAccountTable');
+  if (!tableEl) return;
+  tableEl.innerHTML = `
+    <div class="admin-table-row admin-table-head accounts-grid">
+      <div></div><div>Account Name</div><div>Tier</div><div>Renewal Date</div><div>Status</div><div>Actions</div>
+    </div>
+    ${state.accounts.map(a=>{
+      const due = a.renewalDate?new Date(a.renewalDate):null;
+      const days = due?Math.ceil((due-now)/86400000):null;
+      const statusHtml = !due?'<span style="color:var(--text-3);font-size:.75rem">No renewal</span>':
+        days<0?'<span style="background:#fee2e2;color:#b91c1c;padding:2px 7px;border-radius:4px;font-size:.72rem;font-weight:700">OVERDUE</span>':
+        days<=30?`<span style="background:#fef3c7;color:#92400e;padding:2px 7px;border-radius:4px;font-size:.72rem;font-weight:700">${days}d left</span>`:
+        `<span style="color:var(--text-3);font-size:.75rem">${fmtDate(a.renewalDate)}</span>`;
+      const tierColors = {Enterprise:'#7c3aed','Mid-Market':'#2563eb',SMB:'#16a34a'};
+      return `<div class="admin-table-row accounts-grid">
+        <div><div style="width:34px;height:34px;border-radius:8px;background:${tierColors[a.tier]||'#64748b'};display:flex;align-items:center;justify-content:center;font-size:1.1rem;color:#fff">${{Enterprise:'🏛','Mid-Market':'🏢',SMB:'🏠'}[a.tier]||'🏢'}</div></div>
+        <div><div class="admin-user-name">${a.name}</div></div>
+        <div><span class="${badgeClass(a.tier)}">${a.tier||'—'}</span></div>
+        <div style="font-size:.8rem;font-family:var(--mono)">${fmtDate(a.renewalDate)||'—'}</div>
+        <div>${statusHtml}</div>
+        <div class="admin-row-actions">
+          <button class="cca-btn" onclick="openEditDialog('accounts','${a.id}')">✏ Edit</button>
+          <button class="cca-btn cca-danger" onclick="deleteRecord('accounts','${a.id}')">🗑</button>
+        </div>
+      </div>`;
+    }).join('')}`;
+}
+
+function adminExportAccounts() {
+  const csv=['Name,Tier,Renewal Date,Status'].concat(
+    state.accounts.map(a=>[a.name,a.tier||'',a.renewalDate||'','Active'].map(v=>`"${v}"`).join(','))
+  ).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=`accounts-admin-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+}
+
+// ── Audit Log ──────────────────────────────────────────────────────
+function renderAuditLog() {
+  const search     = (q('auditSearch')?.value||'').toLowerCase();
+  const typeFilter = q('auditTypeFilter')?.value||'';
+  const logs = auditLog.filter(l=>
+    (!search || l.detail.toLowerCase().includes(search)||l.user.toLowerCase().includes(search)) &&
+    (!typeFilter || l.action===typeFilter)
+  );
+  const listEl = q('adminAuditList');
+  if (!listEl) return;
+  if (!logs.length) { listEl.innerHTML=`<div style="padding:2rem;text-align:center;color:var(--text-3)">No audit entries found.</div>`; return; }
+  listEl.innerHTML = logs.slice(0,200).map(l=>`
+    <div class="audit-item">
+      <span class="audit-action-badge audit-${l.action}">${l.action}</span>
+      <span class="audit-user">${l.user}</span>
+      <span class="audit-desc">${l.detail}</span>
+      <span class="audit-time">${timeAgo(l.time)}</span>
+    </div>`).join('');
+}
+
+function exportAuditLog() {
+  const csv=['Time,Action,Resource,User,Detail'].concat(
+    auditLog.map(l=>[l.time,l.action,l.resource,l.user,l.detail].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(','))
+  ).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=`audit-log-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+}
+
+// ── System ─────────────────────────────────────────────────────────
+function renderAdminSystem() {
+  const statsEl = q('adminSystemStats');
+  if (!statsEl) return;
+  const lsSize = JSON.stringify(localStorage).length;
+  statsEl.innerHTML = `
+    <div class="admin-sys-card"><div class="admin-sys-label">Contacts</div><div class="admin-sys-val">${state.contacts.length}</div></div>
+    <div class="admin-sys-card"><div class="admin-sys-label">Leads</div><div class="admin-sys-val">${state.leads.length}</div></div>
+    <div class="admin-sys-card"><div class="admin-sys-label">Tickets</div><div class="admin-sys-val">${state.tickets.length}</div></div>
+    <div class="admin-sys-card"><div class="admin-sys-label">Projects</div><div class="admin-sys-val">${state.projects.length}</div></div>
+    <div class="admin-sys-card"><div class="admin-sys-label">Tasks</div><div class="admin-sys-val">${state.tasks.length}</div></div>
+    <div class="admin-sys-card"><div class="admin-sys-label">Documents</div><div class="admin-sys-val">${state.documents.length}</div></div>
+    <div class="admin-sys-card"><div class="admin-sys-label">Activities</div><div class="admin-sys-val">${state.activities.length}</div></div>
+    <div class="admin-sys-card"><div class="admin-sys-label">Approvals</div><div class="admin-sys-val">${state.approvals.length}</div></div>
+    <div class="admin-sys-card"><div class="admin-sys-label">KPIs</div><div class="admin-sys-val">${state.kpis.length}</div></div>
+    <div class="admin-sys-card"><div class="admin-sys-label">Audit Entries</div><div class="admin-sys-val">${auditLog.length}</div></div>
+    <div class="admin-sys-card"><div class="admin-sys-label">LocalStorage</div><div class="admin-sys-val">${(lsSize/1024).toFixed(1)} KB</div><div class="admin-sys-sub">of ~5MB limit</div></div>
+    <div class="admin-sys-card"><div class="admin-sys-label">API Server</div><div class="admin-sys-val" style="font-size:.9rem">Port 3002</div></div>`;
+}
+
+function exportAllData() {
+  const data = {
+    exportedAt: new Date().toISOString(),
+    contacts:   state.contacts,
+    leads:      state.leads,
+    tickets:    state.tickets,
+    projects:   state.projects,
+    tasks:      state.tasks,
+    milestones: state.milestones,
+    activities: state.activities,
+    accounts:   state.accounts,
+    documents:  state.documents.map(d=>({...d,data:undefined})), // exclude base64
+    approvals:  state.approvals,
+    kpis:       state.kpis,
+    auditLog,
+  };
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`crm-backup-${new Date().toISOString().slice(0,10)}.json`; a.click();
+  writeAudit('CREATE','system','Exported full CRM data backup');
+}
+
+function adminClearNotifications() {
+  if (!confirm('Clear all notifications and audit log?')) return;
+  state.notifications=[];
+  auditLog.length=0;
+  localStorage.setItem('crm_notifications','[]');
+  localStorage.setItem('crm_audit_log','[]');
+  renderNotifBell(); renderNotifPanel();
+  pushNotif('Cleared','Notifications and audit log cleared.','🗑','info');
+}
+
+function adminResetLocalStorage() {
+  if (!confirm('⚠ This will delete all local data (projects, tasks, activities, documents etc.).\n\nAPI data (contacts, leads, tickets) is preserved.\n\nAre you sure?')) return;
+  const keep = ['crm_session'];
+  Object.keys(localStorage).filter(k=>!keep.includes(k)&&k.startsWith('crm_')).forEach(k=>localStorage.removeItem(k));
+  location.reload();
 }
 

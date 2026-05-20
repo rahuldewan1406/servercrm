@@ -150,6 +150,7 @@
     </div>
     <nav class="topbar-nav">
       <button class="tnav active" data-tab="dashboard">Dashboard</button>
+      <button class="tnav admin-only-tab hidden" data-tab="admin" id="adminNavTab">⚙ Admin</button>
       <button class="tnav" data-tab="customers">Accounts</button>
       <button class="tnav" data-tab="sales">Sales</button>
       <button class="tnav" data-tab="projects">Projects</button>
@@ -568,6 +569,152 @@
           </div>
         </div>
       </div>
+    </section>
+
+
+    <!-- ══════════════════════════════════════════════════
+         ADMIN PANEL
+    ══════════════════════════════════════════════════ -->
+    <section id="admin" class="page">
+      <div class="page-header">
+        <div>
+          <h1>⚙ Admin Control Panel</h1>
+          <div style="font-size:.8rem;color:var(--text-3);margin-top:2px">DIC — NHAI CRM · System Administration</div>
+        </div>
+      </div>
+
+      <!-- Admin nav tabs -->
+      <div class="admin-tabs">
+        <button class="admin-tab active" onclick="switchAdminTab('users',this)">👥 User Management</button>
+        <button class="admin-tab" onclick="switchAdminTab('roles',this)">🔐 Roles & Permissions</button>
+        <button class="admin-tab" onclick="switchAdminTab('contacts-admin',this)">📇 Contacts Admin</button>
+        <button class="admin-tab" onclick="switchAdminTab('accounts-admin',this)">🏢 Accounts Admin</button>
+        <button class="admin-tab" onclick="switchAdminTab('audit',this)">📋 Audit Log</button>
+        <button class="admin-tab" onclick="switchAdminTab('system',this)">🛠 System</button>
+      </div>
+
+      <!-- ── User Management ── -->
+      <div id="adminTab-users" class="admin-tab-content">
+        <div class="admin-section-header">
+          <div>
+            <h2 class="admin-section-title">User Management</h2>
+            <p class="admin-section-desc">Create, edit, and manage CRM users and their role assignments.</p>
+          </div>
+          <button class="btn-primary-sm" onclick="openModal('newUserModal')">+ Add User</button>
+        </div>
+        <div id="adminUserStats" class="admin-stats-row"></div>
+        <div class="admin-search-bar">
+          <input id="adminUserSearch" class="search-box" placeholder="🔍 Search users by name or email…" oninput="renderAdminUsers()" />
+        </div>
+        <div id="adminUserTable" class="admin-user-table"></div>
+      </div>
+
+      <!-- ── Roles & Permissions ── -->
+      <div id="adminTab-roles" class="admin-tab-content hidden">
+        <div class="admin-section-header">
+          <div>
+            <h2 class="admin-section-title">Roles & Permissions</h2>
+            <p class="admin-section-desc">View and manage role definitions and module-level access controls.</p>
+          </div>
+        </div>
+        <div id="adminRolesGrid" class="admin-roles-grid"></div>
+        <div class="admin-permission-matrix-wrap">
+          <h3 class="admin-matrix-title">Permission Matrix</h3>
+          <div id="adminPermMatrix" class="admin-perm-matrix"></div>
+        </div>
+      </div>
+
+      <!-- ── Contacts Admin ── -->
+      <div id="adminTab-contacts-admin" class="admin-tab-content hidden">
+        <div class="admin-section-header">
+          <div>
+            <h2 class="admin-section-title">Contacts Administration</h2>
+            <p class="admin-section-desc">View, reassign ownership, and manage all contacts across all users.</p>
+          </div>
+          <div class="btn-group">
+            <button class="btn-secondary-sm" onclick="adminExportContacts()">⬇ Export All</button>
+            <button class="btn-secondary-sm" onclick="adminBulkAssignContacts()">🔄 Bulk Reassign</button>
+          </div>
+        </div>
+        <div id="adminContactStats" class="admin-stats-row"></div>
+        <div class="admin-search-bar">
+          <input id="adminContactSearch" class="search-box" placeholder="🔍 Search contacts…" oninput="renderAdminContacts()" />
+          <select id="adminContactOwnerFilter" class="filter-select" onchange="renderAdminContacts()">
+            <option value="">All Owners</option>
+          </select>
+        </div>
+        <div id="adminContactTable" class="admin-user-table"></div>
+      </div>
+
+      <!-- ── Accounts Admin ── -->
+      <div id="adminTab-accounts-admin" class="admin-tab-content hidden">
+        <div class="admin-section-header">
+          <div>
+            <h2 class="admin-section-title">Accounts Administration</h2>
+            <p class="admin-section-desc">Manage all accounts, tiers, renewal dates and ownership.</p>
+          </div>
+          <button class="btn-secondary-sm" onclick="adminExportAccounts()">⬇ Export All</button>
+        </div>
+        <div id="adminAccountStats" class="admin-stats-row"></div>
+        <div id="adminAccountTable" class="admin-user-table"></div>
+      </div>
+
+      <!-- ── Audit Log ── -->
+      <div id="adminTab-audit" class="admin-tab-content hidden">
+        <div class="admin-section-header">
+          <div>
+            <h2 class="admin-section-title">Audit Log</h2>
+            <p class="admin-section-desc">Track all create/edit/delete operations with who did what and when.</p>
+          </div>
+          <button class="btn-secondary-sm" onclick="exportAuditLog()">⬇ Export Log</button>
+        </div>
+        <div class="admin-search-bar">
+          <input id="auditSearch" class="search-box" placeholder="🔍 Search audit log…" oninput="renderAuditLog()" />
+          <select id="auditTypeFilter" class="filter-select" onchange="renderAuditLog()">
+            <option value="">All Actions</option>
+            <option>CREATE</option><option>UPDATE</option><option>DELETE</option><option>LOGIN</option><option>LOGOUT</option>
+          </select>
+        </div>
+        <div id="adminAuditList" class="admin-audit-list"></div>
+      </div>
+
+      <!-- ── System ── -->
+      <div id="adminTab-system" class="admin-tab-content hidden">
+        <div class="admin-section-header">
+          <div>
+            <h2 class="admin-section-title">System Settings</h2>
+            <p class="admin-section-desc">Database stats, data management, and system configuration.</p>
+          </div>
+        </div>
+        <div id="adminSystemStats" class="admin-system-stats"></div>
+        <div class="admin-danger-zone">
+          <h3 class="admin-danger-title">⚠ Danger Zone</h3>
+          <div class="admin-danger-actions">
+            <div class="admin-danger-item">
+              <div>
+                <div class="admin-danger-label">Export All Data</div>
+                <div class="admin-danger-desc">Download complete CRM data as JSON backup</div>
+              </div>
+              <button class="btn-secondary-sm" onclick="exportAllData()">⬇ Export JSON</button>
+            </div>
+            <div class="admin-danger-item">
+              <div>
+                <div class="admin-danger-label">Clear Notifications</div>
+                <div class="admin-danger-desc">Remove all notifications and audit entries</div>
+              </div>
+              <button class="btn-secondary-sm" onclick="adminClearNotifications()">🗑 Clear</button>
+            </div>
+            <div class="admin-danger-item" style="border-color:#fca5a5">
+              <div>
+                <div class="admin-danger-label" style="color:var(--rose)">Reset Local Storage</div>
+                <div class="admin-danger-desc">Clears all localStorage data (accounts, projects, tasks etc.). API data is preserved.</div>
+              </div>
+              <button class="btn-secondary-sm" style="color:var(--rose);border-color:#fca5a5" onclick="adminResetLocalStorage()">⚠ Reset</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </section>
 
 
@@ -994,6 +1141,75 @@
     </form>
   </dialog>
 
+
+
+  <!-- New User Modal -->
+  <dialog id="newUserModal" class="modal-dialog">
+    <div class="modal-header">
+      <h3>👤 Add New User</h3>
+      <button class="modal-close" onclick="closeModal('newUserModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <label>Full Name<input id="newUserName" placeholder="e.g. Rahul Sharma" /></label>
+      <label>Email<input id="newUserEmail" type="email" placeholder="user@nhai.gov.in" /></label>
+      <label>Password<input id="newUserPassword" type="password" placeholder="Min. 6 characters" /></label>
+      <label>Role<select id="newUserRole">
+        <option value="viewer">Viewer — Read only</option>
+        <option value="sales_rep">Sales Rep — Contacts &amp; Leads</option>
+        <option value="manager">Manager — All except Users</option>
+        <option value="admin">Admin — Full Access</option>
+      </select></label>
+      <p id="newUserError" style="color:var(--rose);font-size:.8rem;min-height:1rem"></p>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn-modal-secondary" onclick="closeModal('newUserModal')">Cancel</button>
+      <button type="button" class="btn-modal-primary" onclick="createAdminUser()">Create User</button>
+    </div>
+  </dialog>
+
+  <!-- Edit User Modal -->
+  <dialog id="editUserModal" class="modal-dialog">
+    <div class="modal-header">
+      <h3>✏ Edit User</h3>
+      <button class="modal-close" onclick="closeModal('editUserModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="editUserInfo" style="background:var(--bg);border-radius:8px;padding:.65rem .85rem;margin-bottom:.5rem;font-size:.82rem;color:var(--text-2)"></div>
+      <label>Change Role<select id="editUserRole">
+        <option value="viewer">Viewer</option>
+        <option value="sales_rep">Sales Rep</option>
+        <option value="manager">Manager</option>
+        <option value="admin">Admin</option>
+      </select></label>
+      <label>Active Status<select id="editUserActive">
+        <option value="1">Active</option>
+        <option value="0">Suspended</option>
+      </select></label>
+      <label>Reset Password (leave blank to keep)<input id="editUserPassword" type="password" placeholder="New password…" /></label>
+      <p id="editUserError" style="color:var(--rose);font-size:.8rem;min-height:1rem"></p>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn-modal-secondary" onclick="closeModal('editUserModal')">Cancel</button>
+      <button type="button" class="btn-modal-primary" onclick="saveEditUser()">Save Changes</button>
+    </div>
+  </dialog>
+
+  <!-- Bulk Reassign Contacts Modal -->
+  <dialog id="bulkReassignModal" class="modal-dialog">
+    <div class="modal-header">
+      <h3>🔄 Bulk Reassign Contacts</h3>
+      <button class="modal-close" onclick="closeModal('bulkReassignModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <label>From (current owner)<select id="reassignFrom"><option value="">— Select user —</option></select></label>
+      <label>To (new owner)<select id="reassignTo"><option value="">— Select user —</option></select></label>
+      <p id="reassignPreview" style="font-size:.82rem;color:var(--text-2);margin-top:.4rem"></p>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn-modal-secondary" onclick="closeModal('bulkReassignModal')">Cancel</button>
+      <button type="button" class="btn-modal-primary" onclick="confirmBulkReassign()">Reassign All</button>
+    </div>
+  </dialog>
 
 
   <!-- New Approval Request Modal -->
