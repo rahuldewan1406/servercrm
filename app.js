@@ -54,6 +54,36 @@ const QUICK_REPLIES = [
 
 const _bulkSelected = { contacts: new Set(), leads: new Set(), tickets: new Set() };
 
+// ── Mutable state variables (hoisted to avoid TDZ) ──────────────────────────
+const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
+let _rtcPeer        = null;
+let _localStream    = null;
+let _callTimerInt   = null;
+let _callSeconds    = 0;
+let _isMuted        = false;
+let _isCamOff       = false;
+let _isScreenShare  = false;
+let _callType       = 'video'; // 'video' | 'audio'
+let _callContactId  = null;
+const SIGNAL_KEY    = 'crm_webrtc_signal';
+let _searchActive = false;
+let _searchMatches = [];
+let _searchIdx = 0;
+let _replyingToMsgId = null;
+let _calYear  = new Date().getFullYear();
+let _calMonth = new Date().getMonth();  // 0-indexed
+let _calView  = 'month';
+let _calWeekOffset = 0;
+let _currentReport = 'contacts';
+let _mailProjectId = null;
+let _editingTemplateId = null;
+let _dragLeadId = null;
+let _pendingFiles = [];
+let _renamingDocId = null;
+let _activeDocId = null;
+let _cityHighlightIdx = -1;
+
+
 const REPORT_CONFIG = {
   contacts: {
     label: 'Contacts',
@@ -1079,7 +1109,6 @@ function renderAll() {
 
 
 // ── Mail Project Status ───────────────────────────────────────────────────────
-let _mailProjectId = null;
 
 function openProjectMailModal(projectId) {
   const p = state.projects.find(x=>x.id===projectId);
@@ -1221,9 +1250,6 @@ function fmtSize(bytes) {
 }
 
 // ── Pending file queue ────────────────────────────────────────────
-let _pendingFiles = [];
-let _renamingDocId = null;
-let _activeDocId = null;
 
 function handleDragOver(e) {
   e.preventDefault();
@@ -1684,7 +1710,6 @@ const ALL_CITIES_FLAT = Object.entries(INDIA_CITIES).flatMap(([state, cities]) =
   cities.map(city => ({ city, state, label: city + ', ' + state }))
 ).sort((a,b)=>a.city.localeCompare(b.city));
 
-let _cityHighlightIdx = -1;
 
 function showCityDropdown() {
   filterCityDropdown(q('c_location')?.value || '');
@@ -1874,7 +1899,6 @@ setInterval(runNotifScan, 5 * 60 * 1000);
 //  FEATURE 1: REPORTS & CSV/PDF EXPORT
 // ══════════════════════════════════════════════════════════════════
 
-let _currentReport = 'contacts';
 
 // REPORT_CONFIG — hoisted
 
@@ -2131,7 +2155,6 @@ function openTimeline(contactId) {
 //  FEATURE 3: DRAG & DROP KANBAN
 // ══════════════════════════════════════════════════════════════════
 
-let _dragLeadId = null;
 
 function kanbanDragStart(e, leadId) {
   _dragLeadId = leadId;
@@ -2424,7 +2447,6 @@ if (!state.emailTemplates) {
 ];;
 }
 
-let _editingTemplateId = null;
 
 function saveTemplateState() {
   localStorage.setItem('crm_templates', JSON.stringify(state.emailTemplates));
@@ -2782,9 +2804,6 @@ window.renderContactList = function(list) {
 //  FEATURE 8: CALENDAR VIEW
 // ══════════════════════════════════════════════════════════════════
 
-let _calYear  = new Date().getFullYear();
-let _calMonth = new Date().getMonth();  // 0-indexed
-let _calView  = 'month';
 
 function switchCalView(view) {
   _calView = view;
@@ -2796,7 +2815,6 @@ function calNav(dir) {
   else { _calMonth += dir; if (_calMonth>11){_calMonth=0;_calYear++;} if(_calMonth<0){_calMonth=11;_calYear--;} }
   renderCalendar();
 }
-let _calWeekOffset = 0;
 function calToday() { _calYear=new Date().getFullYear(); _calMonth=new Date().getMonth(); _calWeekOffset=0; renderCalendar(); }
 
 // Build unified event list for a date
@@ -3553,9 +3571,6 @@ document.addEventListener('click', e => {
 });
 
 // ── Message Search ────────────────────────────────────────────────
-let _searchActive = false;
-let _searchMatches = [];
-let _searchIdx = 0;
 
 function toggleChatSearch() {
   const bar = q('chatSearchBar');
@@ -3667,7 +3682,6 @@ function scrollToMessage(msgId) {
 }
 
 // ── Reply to Message ──────────────────────────────────────────────
-let _replyingToMsgId = null;
 
 function replyToMessage(msgId) {
   const thread = chatState.threads[chatState.activePhone];
@@ -3978,17 +3992,6 @@ document.head.appendChild(_flashStyle);
 //  VIDEO CALLING  (WebRTC + localStorage signaling)
 // ══════════════════════════════════════════════════════════════════
 
-const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
-let _rtcPeer        = null;
-let _localStream    = null;
-let _callTimerInt   = null;
-let _callSeconds    = 0;
-let _isMuted        = false;
-let _isCamOff       = false;
-let _isScreenShare  = false;
-let _callType       = 'video'; // 'video' | 'audio'
-let _callContactId  = null;
-const SIGNAL_KEY    = 'crm_webrtc_signal';
 
 // ── Initiate call ─────────────────────────────────────────────────
 async function startVideoCall() { await _initiateCall('video'); }
