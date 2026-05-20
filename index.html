@@ -152,7 +152,6 @@
       <button class="tnav active" data-tab="dashboard">Dashboard</button>
       <button class="tnav admin-only-tab hidden" data-tab="admin" id="adminNavTab">⚙ Admin</button>
       <button class="tnav" data-tab="customers">Accounts</button>
-      <button class="tnav" data-tab="sales">Sales</button>
       <button class="tnav" data-tab="projects">Projects</button>
       <button class="tnav" data-tab="support">Support</button>
       <button class="tnav" data-tab="calendar">Calendar</button>
@@ -356,59 +355,6 @@
           <p>No accounts yet.</p>
           <button class="btn-primary-sm" onclick="openModal('accountModal')">+ Add Account</button>
         </div>
-      </div>
-    </section>
-
-    <!-- ══════════════════════════════════════════════════
-         SALES PIPELINE
-    ══════════════════════════════════════════════════ -->
-    <section id="sales" class="page">
-      <div class="page-header">
-        <h1>Sales Pipeline</h1>
-        <div class="btn-group">
-          <button class="btn-primary-sm" onclick="openModal('leadModal')">+ New Lead</button>
-          <button class="btn-secondary-sm" onclick="openModal('oppModal')">+ Opportunity</button>
-        </div>
-      </div>
-
-      <!-- Kanban board -->
-      <div class="kanban-header"><h3>Lead Pipeline (Kanban)</h3></div>
-      <div class="kanban-board" id="kanbanBoard">
-        <div class="kanban-col" data-stage="New">
-          <div class="kanban-col-title"><span class="stage-dot stage-new"></span>New</div>
-          <div class="kanban-cards" id="kStageNew" ondragover="kanbanDragOver(event)" ondrop="kanbanDrop(event,'New')"></div>
-        </div>
-        <div class="kanban-col" data-stage="Qualified">
-          <div class="kanban-col-title"><span class="stage-dot stage-qualified"></span>Qualified</div>
-          <div class="kanban-cards" id="kStageQualified" ondragover="kanbanDragOver(event)" ondrop="kanbanDrop(event,'Qualified')"></div>
-        </div>
-        <div class="kanban-col" data-stage="Proposal">
-          <div class="kanban-col-title"><span class="stage-dot stage-proposal"></span>Proposal</div>
-          <div class="kanban-cards" id="kStageProposal" ondragover="kanbanDragOver(event)" ondrop="kanbanDrop(event,'Proposal')"></div>
-        </div>
-        <div class="kanban-col" data-stage="Won">
-          <div class="kanban-col-title"><span class="stage-dot stage-won"></span>Won</div>
-          <div class="kanban-cards" id="kStageWon" ondragover="kanbanDragOver(event)" ondrop="kanbanDrop(event,'Won')"></div>
-        </div>
-        <div class="kanban-col" data-stage="Lost">
-          <div class="kanban-col-title"><span class="stage-dot stage-lost"></span>Lost</div>
-          <div class="kanban-cards" id="kStageLost" ondragover="kanbanDragOver(event)" ondrop="kanbanDrop(event,'Lost')"></div>
-        </div>
-      </div>
-
-      <!-- Opportunities -->
-      <div class="section-divider">Opportunities</div>
-      <div id="bulkLeadBar" class="bulk-action-bar hidden">
-        <span id="bulkLeadCount" class="bulk-count">0 selected</span>
-        <button class="bulk-btn" onclick="bulkExport('leads')">⬇ Export</button>
-        <button class="bulk-btn" onclick="bulkUpdateStage()">🔄 Change Stage</button>
-        <button class="bulk-btn bulk-btn-danger" onclick="bulkDelete('leads')">🗑 Delete</button>
-        <button class="bulk-btn-ghost" onclick="clearBulkSelection('leads')">✕ Clear</button>
-      </div>
-      <ul id="opportunityList" class="record-list opp-list"></ul>
-      <div class="forecast-bar">
-        <span>Weighted Pipeline Forecast:</span>
-        <strong>₹<span id="weightedForecast2">0</span></strong>
       </div>
     </section>
 
@@ -1018,35 +964,8 @@
       </div>
     </form>
   </dialog>
-
-  <!-- Lead Modal -->
-  <dialog id="leadModal" class="modal-dialog">
-    <div class="modal-header"><h3>New Lead</h3><button class="modal-close" onclick="closeModal('leadModal')">✕</button></div>
-    <form id="leadForm" class="modal-body">
-      <label>Lead Title<input id="leadName" placeholder="Enterprise Deal – Acme" /></label>
-      <label>Stage<select id="leadStage"><option>New</option><option>Qualified</option><option>Proposal</option><option>Won</option><option>Lost</option></select></label>
-      <label>Value (₹)<input id="leadValue" type="number" min="0" placeholder="500000" /></label>
-      <label>Link to Contact<select id="leadContact"><option value="">— None —</option></select></label>
-      <div class="modal-footer">
-        <button type="button" class="btn-modal-secondary" onclick="closeModal('leadModal')">Cancel</button>
-        <button type="button" class="btn-modal-primary" onclick="saveLead()">Save Lead</button>
-      </div>
-    </form>
-  </dialog>
-
-  <!-- Opportunity Modal -->
-  <dialog id="oppModal" class="modal-dialog">
-    <div class="modal-header"><h3>New Opportunity</h3><button class="modal-close" onclick="closeModal('oppModal')">✕</button></div>
-    <form id="opportunityForm" class="modal-body">
-      <label>Opportunity Name<input id="oppName" placeholder="Q3 Expansion – Acme" /></label>
-      <label>Deal Value (₹)<input id="oppValue" type="number" min="0" placeholder="1000000" /></label>
-      <label>Probability<select id="oppProbability"><option value="25">25%</option><option value="50">50%</option><option value="75">75%</option><option value="90">90%</option></select></label>
-      <div class="modal-footer">
-        <button type="button" class="btn-modal-secondary" onclick="closeModal('oppModal')">Cancel</button>
-        <button type="button" class="btn-modal-primary" onclick="saveOpportunity()">Add Opportunity</button>
-      </div>
-    </form>
-  </dialog>
+>
+>
 
   <!-- Project Modal -->
   <dialog id="projectModal" class="modal-dialog modal-lg">
@@ -1482,23 +1401,7 @@
       <button type="button" class="btn-modal-primary" id="sendBulkBtn" onclick="sendBulkEmail()">Send to All</button>
     </div>
   </dialog>
-
-  <!-- Bulk Stage Modal -->
-  <dialog id="bulkStageModal" class="modal-dialog">
-    <div class="modal-header">
-      <h3>🔄 Change Stage</h3>
-      <button class="modal-close" onclick="closeModal('bulkStageModal')">✕</button>
-    </div>
-    <div class="modal-body">
-      <label>New Stage<select id="bulkNewStage">
-        <option>New</option><option>Qualified</option><option>Proposal</option><option>Won</option><option>Lost</option>
-      </select></label>
-    </div>
-    <div class="modal-footer">
-      <button type="button" class="btn-modal-secondary" onclick="closeModal('bulkStageModal')">Cancel</button>
-      <button type="button" class="btn-modal-primary" onclick="confirmBulkStage()">Apply</button>
-    </div>
-  </dialog>
+>
 
   <!-- Portal Link Modal -->
   <dialog id="portalLinkModal" class="modal-dialog">

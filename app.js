@@ -455,7 +455,7 @@ async function apiDelete(res, id) {
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
-const PAGES = ['dashboard','customers','sales','projects','support','email'];
+const PAGES = ['dashboard','customers','projects','support','email'];
 function switchTab(id) {
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.tnav').forEach(b=>b.classList.remove('active'));
@@ -572,19 +572,6 @@ async function saveContact() {
   }
 }
 
-async function saveLead() {
-  const title = q('leadName').value.trim();
-  if (!title) { alert('Lead title is required.'); return; }
-  if (!state.session) { alert('Please log in first.'); return; }
-  const ok = await apiCreate('leads', { title, stage:q('leadStage').value, value:Number(q('leadValue').value)||0, contactId:q('leadContact').value||null });
-  if (ok) {
-    ['leadName','leadValue'].forEach(id=>{const el=q(id);if(el)el.value='';});
-    q('leadStage').value='New'; q('leadContact').value='';
-    closeModal('leadModal');
-    const r=await apiFetch('/leads'); if(r&&r.ok) state.leads=await r.json();
-    renderAll();
-  }
-}
 
 async function saveTicket() {
   const title = q('ticketTitle').value.trim();
@@ -607,13 +594,6 @@ function saveAccount() {
   persistLocal(); closeModal('accountModal'); renderAll();
 }
 
-function saveOpportunity() {
-  const name = q('oppName').value.trim();
-  if (!name) { alert('Opportunity name is required.'); return; }
-  state.opportunities.push({ id:crypto.randomUUID(), created_at:new Date().toISOString(), name, value:Number(q('oppValue').value)||0, probability:Number(q('oppProbability').value) });
-  q('oppName').value=''; q('oppValue').value='';
-  persistLocal(); closeModal('oppModal'); renderAll();
-}
 
 function saveProject() {
   const name = q('projectName').value.trim();
@@ -1099,30 +1079,6 @@ function renderC360() {
     <div class="c360-section"><div class="c360-section-title">Recent Activities</div><ul>${myActs.slice(0,4).map(a=>`<li><strong>${a.type}</strong>: ${a.note.slice(0,60)}</li>`).join('')||'<li style="color:var(--text-3)">None</li>'}</ul></div>`;
 }
 
-// ── Sales / Kanban ────────────────────────────────────────────────────────────
-function renderSales() {
-  const canE=state.session&&can('leads.update'), canD=state.session&&can('leads.delete');
-  ['New','Qualified','Proposal','Won','Lost'].forEach(stage=>{
-    const col = q(`kStage${stage.replace(' ','')}`);
-    const leads = state.leads.filter(l=>l.stage===stage);
-    col.innerHTML = leads.map(l=>`
-      <div class="kanban-card" draggable="true" ondragstart="kanbanDragStart(event,'${l.id}')" ondragend="kanbanDragEnd(event)">
-        <div class="kanban-card-title">${l.title}</div>
-        <div class="kanban-card-val">₹${fmtMoney(l.value)}</div>
-        ${l.contact_id ? `<div class="kanban-card-contact">👤 ${state.contacts.find(c=>c.id===l.contact_id)?.name||'—'}</div>` : ''}
-        <div class="kanban-card-actions">${actBtns('leads',l.id,canE,canD)}</div>
-      </div>`).join('') || '<div style="color:var(--text-3);font-size:.75rem;padding:.3rem">Empty</div>';
-  });
-  const canOE=true, canOD=true;
-  q('opportunityList').innerHTML = state.opportunities.map(o=>`
-    <li>
-      <div class="record-main">
-        <div class="record-name">${o.name}</div>
-        <div class="record-sub">₹${fmtMoney(o.value)} <span class="opp-prob">@ ${o.probability}%</span> · Weighted: ₹${fmtMoney(o.value*o.probability/100)}</div>
-      </div>
-      ${actBtns('opportunities',o.id)}
-    </li>`).join('') || '<li style="color:var(--text-3);font-size:.82rem;padding:.5rem">No opportunities yet.</li>';
-}
 
 // ── Projects ──────────────────────────────────────────────────────────────────
 function renderProjectViews() {
@@ -1290,7 +1246,6 @@ function renderTickets() {
 function renderAll() {
   renderDashboard();
   renderCustomers();
-  renderSales();
   renderProjectViews();
   renderTickets();
   syncContactDropdowns();
@@ -2641,66 +2596,9 @@ function openTimeline(contactId) {
 // ══════════════════════════════════════════════════════════════════
 
 
-function kanbanDragStart(e, leadId) {
-  _dragLeadId = leadId;
-  e.target.classList.add('dragging');
-  e.dataTransfer.effectAllowed = 'move';
-  e.dataTransfer.setData('text/plain', leadId);
-}
 
-function kanbanDragEnd(e) {
-  e.target.classList.remove('dragging');
-  document.querySelectorAll('.kanban-cards').forEach(c=>c.classList.remove('drag-target'));
-}
 
-function kanbanDragOver(e) {
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-  // Highlight the column
-  const col = e.currentTarget;
-  document.querySelectorAll('.kanban-cards').forEach(c=>c.classList.remove('drag-target'));
-  col.classList.add('drag-target');
-}
 
-async function kanbanDrop(e, newStage) {
-  e.preventDefault();
-  document.querySelectorAll('.kanban-cards').forEach(c=>c.classList.remove('drag-target'));
-  const leadId = _dragLeadId || e.dataTransfer.getData('text/plain');
-  if (!leadId) return;
-
-  const lead = state.leads.find(l=>l.id===leadId);
-  if (!lead || lead.stage===newStage) return;
-
-  const oldStage = lead.stage;
-
-  // If dropping into Won or Lost, capture reason
-  if ((newStage==='Won'||newStage==='Lost') && state.session) {
-    const reason = prompt(`Moving to ${newStage}. Enter a reason (optional):`);
-    // Log activity for the stage change
-    state.activities.unshift({
-      id: crypto.randomUUID(), created_at: new Date().toISOString(),
-      type: 'Note', contactId: lead.contact_id||null,
-      note: `Lead "${lead.title}" moved from ${oldStage} → ${newStage}${reason?': '+reason:''}`
-    });
-    persistLocal();
-  }
-
-  // Update via API
-  if (state.session && can('leads.update')) {
-    const ok = await apiUpdate('leads', leadId, { stage: newStage });
-    if (ok) {
-      lead.stage = newStage;
-      const r = await apiFetch('/leads');
-      if (r && r.ok) state.leads = await r.json();
-    }
-  } else {
-    // Offline / read-only: still update locally for demo
-    lead.stage = newStage;
-  }
-
-  renderSales();
-  renderDashboard();
-}
 
 // ══════════════════════════════════════════════════════════════════
 //  FEATURE 4: NOTIFICATIONS & REMINDERS
@@ -3127,20 +3025,19 @@ function toggleBulkSelect(collection, id, checked) {
 }
 
 function toggleSelectAll(collection, checked) {
-  const items = { contacts: state.contacts, leads: state.leads, tickets: state.tickets }[collection] || [];
+  const items = { contacts: state.contacts, tickets: state.tickets }[collection] || [];
   _bulkSelected[collection].clear();
   if (checked) items.forEach(i => _bulkSelected[collection].add(i.id));
   updateBulkBar(collection);
   // Re-render to update checkboxes
   if (collection === 'contacts') renderContactList(state.contacts);
-  if (collection === 'leads') renderSales();
   if (collection === 'tickets') renderTickets();
 }
 
 function updateBulkBar(collection) {
   const count = _bulkSelected[collection].size;
-  const barMap = { contacts:'bulkContactBar', leads:'bulkLeadBar', tickets:'bulkTicketBar' };
-  const cntMap = { contacts:'bulkContactCount', leads:'bulkLeadCount', tickets:'bulkTicketCount' };
+  const barMap = { contacts:'bulkContactBar', tickets:'bulkTicketBar' };
+  const cntMap = { contacts:'bulkContactCount', tickets:'bulkTicketCount' };
   const bar = q(barMap[collection]);
   const cnt = q(cntMap[collection]);
   if (!bar) return;
@@ -3154,7 +3051,6 @@ function clearBulkSelection(collection) {
   if (allCb) allCb.checked = false;
   updateBulkBar(collection);
   if (collection === 'contacts') renderContactList(state.contacts);
-  if (collection === 'leads') renderSales();
   if (collection === 'tickets') renderTickets();
 }
 
@@ -3234,24 +3130,6 @@ async function bulkDelete(collection) {
 }
 
 // Bulk stage change
-function bulkUpdateStage() { openModal('bulkStageModal'); }
-
-async function confirmBulkStage() {
-  const ids = [..._bulkSelected.leads];
-  const newStage = q('bulkNewStage').value;
-  for (const id of ids) {
-    const lead = state.leads.find(l=>l.id===id);
-    if (lead && state.session && can('leads.update')) {
-      await apiUpdate('leads', id, { stage: newStage });
-      lead.stage = newStage;
-    } else if (lead) { lead.stage = newStage; }
-  }
-  if (state.session) { const r=await apiFetch('/leads'); if(r&&r.ok) state.leads=await r.json(); }
-  closeModal('bulkStageModal');
-  clearBulkSelection('leads');
-  renderAll();
-  pushNotif(`${ids.length} leads moved to ${newStage}`, '', '🔄', 'success');
-}
 
 // Bulk resolve tickets
 async function bulkResolveTickets() {
