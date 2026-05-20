@@ -3266,7 +3266,7 @@ function openChatThread(phone, contactId) {
   q('chatThreadAvatar').textContent = (contact?.name||'?').charAt(0).toUpperCase();
   q('chatThreadName').textContent   = contact?.name || 'Unknown';
   q('chatThreadPhone').textContent  = `📱 ${contact?.phone||phone} · ${contact?.company||''}`;
-  q('chatCallBtn').onclick          = () => callContact(contact?.phone||phone);
+  // chatCallBtn removed — video/audio buttons handle calling directly
 
   // Show thread panel
   q('chatThreadEmpty').classList.add('hidden');
@@ -4370,7 +4370,7 @@ function openGroupThread(groupId) {
   q('chatThreadAvatar').style.borderRadius = '10px';
   q('chatThreadName').textContent   = group.name;
   q('chatThreadPhone').textContent  = `${group.members.length} members · ${group.description||'Group Chat'}`;
-  q('chatCallBtn') && (q('chatCallBtn').onclick = ()=>startGroupCall(groupId));
+  // video call for groups handled by startVideoCall()
 
   q('chatThreadEmpty').classList.add('hidden');
   q('chatThreadWrap').classList.remove('hidden');
