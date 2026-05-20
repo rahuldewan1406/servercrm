@@ -252,6 +252,21 @@ const REPORT_CONFIG = {
 
 
 const q = id => document.getElementById(id);
+
+// ── XSS-safe HTML escape (must be defined before any render fn) ────
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g,  '&amp;')
+    .replace(/</g,  '&lt;')
+    .replace(/>/g,  '&gt;')
+    .replace(/"/g,  '&quot;')
+    .replace(/'/g,  '&#x27;')
+    .replace(///g, '&#x2F;');
+}
+// Alias: sanitize for display (escape + limit length)
+function esc(str, max=200) { return escapeHtml(String(str||'').slice(0,max)); }
+
 const EMAIL_RE  = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isEmail   = a => EMAIL_RE.test(String(a).trim());
 
@@ -702,7 +717,7 @@ async function sendMail(e) {
     q('mailForm').reset(); checkSmtp();
   } catch(err) {
     const ml = `mailto:${encodeURIComponent(recipients[0])}?subject=${encodeURIComponent(payload.subject)}&body=${encodeURIComponent(payload.body)}`;
-    banner.innerHTML = `SMTP failed. <a href="${ml}">Open email client</a> as fallback.`;
+    banner.textContent = 'SMTP failed. '; const a=document.createElement('a'); a.href=ml; a.textContent='Open email client'; banner.appendChild(a);;
     banner.className = 'status-banner error'; banner.classList.remove('hidden');
   }
 }
@@ -771,9 +786,9 @@ function pBar(pct, color='var(--accent)') {
 
 // ── Populate contact dropdowns ────────────────────────────────────────────────
 function syncContactDropdowns() {
-  const opts = '<option value="">— None —</option>' + state.contacts.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  const opts = '<option value="">— None —</option>' + state.contacts.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
   ['leadContact','projectContact','activityContact','ticketContact'].forEach(id=>{ const el=q(id); if(el) el.innerHTML=opts; });
-  q('customerSelect').innerHTML = '<option value="">Select a contact…</option>' + state.contacts.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  q('customerSelect').innerHTML = '<option value="">Select a contact…</option>' + state.contacts.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
 }
 function syncProjectDropdowns() {
   const opts = '<option value="">— None —</option>' + state.projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
@@ -1376,7 +1391,7 @@ This report was generated automatically by OrgCRM.
     setTimeout(()=>closeModal('mailProjectModal'), 2000);
   } catch(err) {
     const ml = `mailto:${encodeURIComponent(recipients[0])}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body.slice(0,1800))}`;
-    banner.innerHTML = `SMTP failed. <a href="${ml}">Open email client</a> as fallback.`;
+    banner.textContent = 'SMTP failed. '; const a=document.createElement('a'); a.href=ml; a.textContent='Open email client'; banner.appendChild(a);;
     banner.className='status-banner error'; banner.classList.remove('hidden');
   }
 }
@@ -2812,7 +2827,7 @@ function requestNotifPermission() {
 function syncReminderDropdown() {
   const el = q('reminderContact');
   if (!el) return;
-  el.innerHTML = '<option value="">— None —</option>' + state.contacts.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  el.innerHTML = '<option value="">— None —</option>' + state.contacts.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
 }
 
 
@@ -3300,7 +3315,7 @@ function savePortalSettings() {
 function renderPortalAdmin() {
   // Sync portal contact dropdown
   const sel = q('portalContactSelect');
-  if (sel) sel.innerHTML = '<option value="">— Select —</option>' + state.contacts.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  if (sel) sel.innerHTML = '<option value="">— Select —</option>' + state.contacts.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
 
   // Load settings toggles
   if (q('ptShowProjects')) q('ptShowProjects').checked = state.portalSettings.showProjects !== false;
@@ -3851,9 +3866,7 @@ function formatChatTime(iso) {
   return d.toLocaleDateString('en-IN',{day:'numeric',month:'short'});
 }
 
-function escapeHtml(text) {
-  return String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
-}
+// escapeHtml defined at top of file — handles newlines via CSS white-space:pre-wrap
 
 // ── Init on renderAll ─────────────────────────────────────────────
 function initChat() {
@@ -5149,11 +5162,11 @@ function buildPreview() {
   if (body) body.innerHTML = _bulkParsed.slice(0,50).map(r=>`
     <tr class="row-${r.status}">
       <td>${r.row}</td>
-      <td>${r.contact.name||'—'}</td>
-      <td>${r.contact.email||'—'}</td>
-      <td>${r.contact.phone||'—'}</td>
-      <td>${r.contact.company||'—'}</td>
-      <td>${r.contact.location||'—'}</td>
+      <td>${esc(r.contact.name||'—')}</td>
+      <td>${esc(r.contact.email||'—')}</td>
+      <td>${esc(r.contact.phone||'—')}</td>
+      <td>${esc(r.contact.company||'—')}</td>
+      <td>${esc(r.contact.location||'—')}</td>
       <td>
         ${r.status==='valid'  ?'<span class="bulk-col-status-ok">✓ OK</span>':''}
         ${r.status==='dupe'   ?'<span style="color:#d97706;font-weight:600">⚠ Duplicate</span>':''}
@@ -5342,7 +5355,7 @@ function renderApprovals() {
     <div class="approval-card status-${a.status}">
       <div class="approval-card-header">
         <span class="approval-card-icon">${APPROVAL_ICONS[a.category]||'📋'}</span>
-        <div class="approval-card-title">${a.title}</div>
+        <div class="approval-card-title">${esc(a.title)}</div>
         ${statusBadge[a.status]} ${priorityBadge[a.priority]||''}
       </div>
       <div class="approval-card-meta">
@@ -5352,8 +5365,8 @@ function renderApprovals() {
         <span>🕐 ${timeAgo(a.requestedAt)}</span>
         ${a.amount ? `<span>💰 ₹${fmtMoney(a.amount)}</span>` : ''}
       </div>
-      ${a.desc ? `<div class="approval-card-desc">${a.desc.slice(0,120)}${a.desc.length>120?'…':''}</div>` : ''}
-      ${a.comment ? `<div class="approval-comment">💬 ${a.comment}</div>` : ''}
+      ${a.desc ? `<div class="approval-card-desc">${esc(a.desc).slice(0,120)}${a.desc.length>120?'…':''}</div>` : ''}
+      ${a.comment ? `<div class="approval-comment">💬 ${esc(a.comment)}</div>` : ''}
       <div class="approval-card-footer">
         <div class="approval-card-actions">
           ${a.status==='pending' ? `
@@ -5644,7 +5657,7 @@ function renderPerformance() {
     return `<div class="kpi-item">
       <div style="width:10px;height:40px;border-radius:3px;background:${catColor};flex-shrink:0"></div>
       <div class="kpi-item-info">
-        <div class="kpi-item-name">${k.name}</div>
+        <div class="kpi-item-name">${esc(k.name)}</div>
         <div class="kpi-item-meta">
           ${k.category} · ${k.period}
           ${roleDef?` · <span style="color:${roleDef.color}">${roleDef.icon} ${roleDef.label}</span>`:''}
@@ -5785,8 +5798,8 @@ function renderAdminUsers() {
       return `<div class="admin-table-row users-grid">
         <div><div class="admin-user-avatar" style="background:${color}">${u.name.charAt(0).toUpperCase()}</div></div>
         <div>
-          <div class="admin-user-name">${u.name}${isSelf?' <span style="font-size:.65rem;background:#dbeafe;color:#1e40af;padding:1px 5px;border-radius:3px">You</span>':''}</div>
-          <div class="admin-user-email">${u.email}</div>
+          <div class="admin-user-name">${esc(u.name)}${isSelf?' <span style="font-size:.65rem;background:#dbeafe;color:#1e40af;padding:1px 5px;border-radius:3px">You</span>':''}</div>
+          <div class="admin-user-email">${esc(u.email)}</div>
         </div>
         <div>
           <span style="background:${roleDef.bg};color:${roleDef.color};padding:3px 10px;border-radius:20px;font-size:.73rem;font-weight:700">
@@ -5847,7 +5860,7 @@ function openEditUser(userId) {
   if (!u) return;
   _editingUserId = userId;
   const roleDef = ROLE_DEFINITIONS[u.roles?.[0]||'viewer'];
-  q('editUserInfo').innerHTML = `<strong>${u.name}</strong> · ${u.email}`;
+  q('editUserInfo').innerHTML = `<strong>${esc(u.name)}</strong> · ${esc(u.email)}`;
   q('editUserRole').value   = u.roles?.[0] || 'viewer';
   q('editUserActive').value = String(u.is_active??1);
   q('editUserPassword').value = '';
@@ -5998,7 +6011,7 @@ function renderAdminContacts() {
       return `<div class="admin-table-row contacts-grid">
         <div><div class="admin-user-avatar" style="background:${color};border-radius:8px">${c.name.charAt(0).toUpperCase()}</div></div>
         <div>
-          <div class="admin-user-name">${c.name}</div>
+          <div class="admin-user-name">${esc(c.name)}</div>
           <div class="admin-user-email">${c.location||'—'}</div>
         </div>
         <div>
@@ -6039,8 +6052,8 @@ function adminExportContacts() {
 
 function adminBulkAssignContacts() {
   const fromSel = q('reassignFrom'); const toSel = q('reassignTo');
-  if (fromSel) fromSel.innerHTML='<option value="">— Select —</option>'+_adminUsers.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
-  if (toSel)   toSel.innerHTML  ='<option value="">— Select —</option>'+_adminUsers.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
+  if (fromSel) fromSel.innerHTML='<option value="">— Select —</option>'+_adminUsers.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('');
+  if (toSel)   toSel.innerHTML  ='<option value="">— Select —</option>'+_adminUsers.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('');
   openModal('bulkReassignModal');
 }
 
@@ -6126,8 +6139,8 @@ function renderAuditLog() {
   listEl.innerHTML = logs.slice(0,200).map(l=>`
     <div class="audit-item">
       <span class="audit-action-badge audit-${l.action}">${l.action}</span>
-      <span class="audit-user">${l.user}</span>
-      <span class="audit-desc">${l.detail}</span>
+      <span class="audit-user">${esc(l.user)}</span>
+      <span class="audit-desc">${esc(l.detail)}</span>
       <span class="audit-time">${timeAgo(l.time)}</span>
     </div>`).join('');
 }

@@ -1,7 +1,19 @@
+# Dependencies
 node_modules/
+
+# Environment — NEVER commit secrets
 .env
-crm.db
-crm.db-shm
-crm.db-wal
+.env.local
+.env.production
+
+# Database files — contain user data
+crm-data.json
+*.json.bak
+
+# OS files
 .DS_Store
-.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
