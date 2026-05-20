@@ -18,7 +18,7 @@ const state = {
   portalSettings: JSON.parse(localStorage.getItem('crm_portal_settings') || '{"showProjects":true,"showTickets":true,"showDocs":true,"showActivity":false}'),
   notifications:  JSON.parse(localStorage.getItem('crm_notifications') || '[]'),
   reminders:      JSON.parse(localStorage.getItem('crm_reminders')     || '[]'),
-  emailTemplates: JSON.parse(localStorage.getItem('crm_templates') || 'null') || null,
+  emailTemplates: JSON.parse(localStorage.getItem('crm_templates') || 'null') || [],
   session: null, accessToken: null, refreshToken: null, permissions: new Set(),
 };
 
@@ -2437,7 +2437,7 @@ function syncReminderDropdown() {
 //  FEATURE 5: EMAIL TEMPLATES
 // ══════════════════════════════════════════════════════════════════
 
-if (!state.emailTemplates) {
+if (!state.emailTemplates || !state.emailTemplates.length) {
   state.emailTemplates = [
   { id:'tpl_1', name:'Follow-up', subject:'Following up — {{name}}', body:'Hi {{name}},\n\nI wanted to follow up on our recent conversation. Hope everything is going well at {{company}}.\n\nPlease let me know if you have any questions.\n\nBest regards' },
   { id:'tpl_2', name:'Proposal', subject:'Proposal for {{company}}', body:'Dear {{name}},\n\nThank you for your interest. Please find our proposal attached.\n\nKey highlights:\n• Tailored solution for {{company}}\n• Competitive pricing\n• 30-day onboarding support\n\nLooking forward to your feedback.\n\nBest regards' },
@@ -2455,6 +2455,7 @@ function saveTemplateState() {
 function renderTemplatePills() {
   const pills = q('templatePills');
   if (!pills) return;
+  if (!state.emailTemplates?.length) { pills.innerHTML='<span style="color:var(--text-3);font-size:.75rem">No templates. Click ⚙ to add.</span>'; return; }
   pills.innerHTML = state.emailTemplates.map(t =>
     `<button class="template-pill" onclick="applyTemplate('${t.id}')">${t.name}</button>`
   ).join('');
