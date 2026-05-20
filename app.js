@@ -87,6 +87,22 @@ let _cityHighlightIdx = -1;
 let _contactViewMode = 'grid'; // 'grid' | 'list'
 let _c360ContactId = null;
 
+// ── Late-declared variables hoisted to avoid TDZ ─────────────────
+// Bulk upload
+let _bulkRawData    = [];
+let _bulkHeaders    = [];
+let _bulkMapping    = {};
+let _bulkParsed     = [];
+let _bulkStep       = 1;
+// Approvals
+let _approvalFilter      = 'all';
+let _reviewingApprovalId = null;
+// Admin panel
+let _adminUsers      = [];
+let _editingUserId   = null;
+let _adminCurrentTab = 'users';
+
+
 
 const REPORT_CONFIG = {
   contacts: {
@@ -4981,11 +4997,6 @@ function startGroupCall(groupId) {
 // ══════════════════════════════════════════════════════════════════
 
 // ── State ─────────────────────────────────────────────────────────
-let _bulkRawData    = [];   // raw rows from file
-let _bulkHeaders    = [];   // headers from file
-let _bulkMapping    = {};   // { crmField: fileColumn }
-let _bulkParsed     = [];   // validated rows
-let _bulkStep       = 1;
 
 const CRM_FIELDS = [
   { key:'name',            label:'Full Name',       required:true  },
@@ -5334,8 +5345,6 @@ function downloadContactTemplateSample() {
 
 function saveApprovals() { localStorage.setItem('crm_approvals', JSON.stringify(state.approvals)); }
 
-let _approvalFilter = 'all';
-let _reviewingApprovalId = null;
 
 const APPROVAL_ICONS = {
   'Budget Approval':'💰', 'Project Kickoff':'🚀', 'Vendor Empanelment':'🤝',
@@ -5805,9 +5814,6 @@ function writeAudit(action, resource, detail) {
 }
 
 // ── Admin state ────────────────────────────────────────────────────
-let _adminUsers         = [];
-let _editingUserId      = null;
-let _adminCurrentTab    = 'users';
 
 // ── Show admin tab in nav for admins only ──────────────────────────
 function syncAdminTab() {
