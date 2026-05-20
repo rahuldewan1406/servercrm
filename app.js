@@ -1807,6 +1807,47 @@ function quickVideoCall(contactId) {
   startVideoCall();
 }
 
+
+// ── Video call diagnostic ─────────────────────────────────────────
+async function diagnoseVideoCall() {
+  const results = [];
+
+  // 1. WebRTC support
+  results.push({ test:'WebRTC (RTCPeerConnection)', ok: typeof RTCPeerConnection !== 'undefined' });
+
+  // 2. getUserMedia support
+  results.push({ test:'getUserMedia API', ok: !!(navigator.mediaDevices?.getUserMedia) });
+
+  // 3. HTTPS or localhost
+  const isSecure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  results.push({ test:'Secure context (HTTPS or localhost)', ok: isSecure });
+
+  // 4. Camera permission
+  try {
+    const perm = await navigator.permissions.query({name:'camera'});
+    results.push({ test:'Camera permission: ' + perm.state, ok: perm.state !== 'denied' });
+  } catch(e) { results.push({ test:'Camera permission check', ok: false, note: e.message }); }
+
+  // 5. Mic permission
+  try {
+    const perm = await navigator.permissions.query({name:'microphone'});
+    results.push({ test:'Microphone permission: ' + perm.state, ok: perm.state !== 'denied' });
+  } catch(e) { results.push({ test:'Mic permission check', ok: false, note: e.message }); }
+
+  // 6. Actually try to get camera
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({video:true, audio:true});
+    results.push({ test:'Camera & mic access — SUCCESS', ok: true });
+    stream.getTracks().forEach(t=>t.stop());
+  } catch(err) {
+    results.push({ test:'Camera & mic access — FAILED: ' + err.name, ok: false, note: err.message });
+  }
+
+  // Show results
+  const lines = results.map(r => `${r.ok?'✅':'❌'} ${r.test}${r.note?' ('+r.note+')':''}`).join('\n');
+  alert('Video Call Diagnostics:\n\n' + lines);
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 // Show login screen on load (hide main app until authenticated)
 const _loginScreen = q('loginScreen');
@@ -3954,41 +3995,106 @@ async function startVideoCall() { await _initiateCall('video'); }
 async function startAudioCall() { await _initiateCall('audio'); }
 
 async function _initiateCall(type) {
-  if (!chatState.activeContact && !chatState.activeGroup) return;
-  _callType       = type;
-  _callContactId  = chatState.activeContact.id;
-  const contact   = chatState.activeContact;
-
-  try {
-    _localStream = await navigator.mediaDevices.getUserMedia(
-      type === 'video' ? { video:true, audio:true } : { audio:true }
-    );
-  } catch(err) {
-    alert(`Camera/microphone access denied. Please allow access in browser settings.\n${err.message}`);
+  const contact = chatState.activeContact;
+  if (!contact && !chatState.activeGroup) {
+    alert('Please select a contact first.');
     return;
   }
 
-  _showCallOverlay(contact, type, 'Calling…');
-  q('localVideo').srcObject = _localStream;
+  _callType      = type;
+  _callContactId = contact?.id || null;
 
-  // Create peer connection
-  _rtcPeer = new RTCPeerConnection(rtcConfig);
+  // ── Check browser support ─────────────────────────────────────
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    alert('Your browser does not support video/audio calls.\nPlease use Chrome, Edge, or Firefox.');
+    return;
+  }
+
+  // ── Request media ─────────────────────────────────────────────
+  const constraints = type === 'video'
+    ? { video: { width:{ideal:1280}, height:{ideal:720}, facingMode:'user' }, audio: true }
+    : { audio: true };
+
+  try {
+    _localStream = await navigator.mediaDevices.getUserMedia(constraints);
+  } catch(err) {
+    let msg = 'Could not access camera/microphone.\n\n';
+    if (err.name === 'NotAllowedError')  msg += '🔒 Permission denied.\nClick the camera icon in your browser address bar and allow access, then try again.';
+    else if (err.name === 'NotFoundError') msg += '📷 No camera/microphone found.\nMake sure a camera is connected.';
+    else if (err.name === 'NotReadableError') msg += '⚠️ Camera is in use by another app.\nClose other apps using the camera and try again.';
+    else msg += err.message;
+    alert(msg);
+    return;
+  }
+
+  // ── Show overlay ──────────────────────────────────────────────
+  _showCallOverlay(contact, type, 'Calling…');
+
+  const localVid = q('localVideo');
+  const remoteVid = q('remoteVideo');
+  if (localVid) localVid.srcObject = _localStream;
+  if (type === 'audio') {
+    if (localVid)  localVid.style.display  = 'none';
+    if (remoteVid) remoteVid.style.display = 'none';
+  }
+
+  // ── Create WebRTC peer ────────────────────────────────────────
+  try {
+    _rtcPeer = new RTCPeerConnection(rtcConfig);
+  } catch(err) {
+    alert('WebRTC not supported in this browser. Please use Chrome or Firefox.');
+    _cleanupCall(); return;
+  }
+
   _localStream.getTracks().forEach(track => _rtcPeer.addTrack(track, _localStream));
 
-  _rtcPeer.ontrack = e => { q('remoteVideo').srcObject = e.streams[0]; };
-  _rtcPeer.onicecandidate = e => {
-    if (e.candidate) _signal({ type:'candidate', candidate:e.candidate, from:'caller', to:contact.id });
+  _rtcPeer.ontrack = e => {
+    if (remoteVid && e.streams[0]) {
+      remoteVid.srcObject = e.streams[0];
+      remoteVid.style.display = '';
+      q('videoCallStatus').textContent = 'Connected ✓';
+      _startCallTimer();
+    }
   };
 
-  const offer = await _rtcPeer.createOffer();
-  await _rtcPeer.setLocalDescription(offer);
-  _signal({ type:'offer', sdp:offer, callType:type, callerName:state.session?.name||'CRM User', callerId:state.session?.id, to:contact.id, from:'caller' });
+  _rtcPeer.oniceconnectionstatechange = () => {
+    const state = _rtcPeer?.iceConnectionState;
+    const statusEl = q('videoCallStatus');
+    if (!statusEl) return;
+    if (state === 'checking')     statusEl.textContent = 'Connecting…';
+    if (state === 'connected')    { statusEl.textContent = 'Connected ✓'; _startCallTimer(); }
+    if (state === 'disconnected') statusEl.textContent = 'Connection lost';
+    if (state === 'failed')       { statusEl.textContent = 'Call failed'; setTimeout(endCall, 2000); }
+  };
 
-  // Log call in chat
-  _sendCallMsg(`📹 ${type==='video'?'Video':'Audio'} call started`);
+  _rtcPeer.onicecandidate = e => {
+    if (e.candidate) _signal({ type:'candidate', candidate:e.candidate, from:'caller', to:contact?.id||'group' });
+  };
 
-  // Poll for answer
-  _pollSignal(contact.id, 'caller');
+  // ── Create offer ──────────────────────────────────────────────
+  try {
+    const offer = await _rtcPeer.createOffer({ offerToReceiveAudio:true, offerToReceiveVideo: type==='video' });
+    await _rtcPeer.setLocalDescription(offer);
+    _signal({
+      type:'offer', sdp:offer, callType:type,
+      callerName: state.session?.name || 'CRM User',
+      callerId:   state.session?.id   || 'caller',
+      to:         contact?.id || 'broadcast',
+      from:       'caller'
+    });
+  } catch(err) {
+    alert('Failed to create call offer: ' + err.message);
+    _cleanupCall(); return;
+  }
+
+  if (contact) _sendCallMsg(`📹 ${type==='video'?'Video':'Audio'} call initiated`);
+  _pollSignal(contact?.id || 'group', 'caller');
+}
+
+function _cleanupCall() {
+  if (_localStream) { _localStream.getTracks().forEach(t=>t.stop()); _localStream=null; }
+  if (_rtcPeer)     { try { _rtcPeer.close(); } catch(e){} _rtcPeer=null; }
+  _closeCallOverlay();
 }
 
 // ── Signaling via localStorage (works same-origin tabs) ───────────
@@ -4125,11 +4231,10 @@ function _startCallTimer() {
 
 function endCall() {
   clearInterval(_callTimerInt);
-  if (_localStream) { _localStream.getTracks().forEach(t=>t.stop()); _localStream=null; }
-  if (_rtcPeer)     { _rtcPeer.close(); _rtcPeer=null; }
+  const dur = `${String(Math.floor(_callSeconds/60)).padStart(2,'0')}:${String(_callSeconds%60).padStart(2,'0')}`;
+  _cleanupCall();
   _isMuted=false; _isCamOff=false; _isScreenShare=false;
-  _closeCallOverlay();
-  _sendCallMsg(`📵 Call ended (${String(Math.floor(_callSeconds/60)).padStart(2,'0')}:${String(_callSeconds%60).padStart(2,'0')})`);
+  if (_callSeconds > 0) _sendCallMsg(`📵 Call ended (${dur})`);
 }
 
 // ── Call controls ─────────────────────────────────────────────────
