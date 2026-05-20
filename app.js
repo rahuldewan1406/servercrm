@@ -256,13 +256,8 @@ const q = id => document.getElementById(id);
 // ── XSS-safe HTML escape (must be defined before any render fn) ────
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
-  return String(str)
-    .replace(/&/g,  '&amp;')
-    .replace(/</g,  '&lt;')
-    .replace(/>/g,  '&gt;')
-    .replace(/"/g,  '&quot;')
-    .replace(/'/g,  '&#x27;')
-    .replace(///g, '&#x2F;');
+  const map = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#x27;' };
+  return String(str).replace(/[&<>"']/g, c => map[c]);
 }
 // Alias: sanitize for display (escape + limit length)
 function esc(str, max=200) { return escapeHtml(String(str||'').slice(0,max)); }
