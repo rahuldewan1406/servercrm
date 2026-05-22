@@ -121,4 +121,4 @@ app.use((err, req, res, next) => {
 process.on('unhandledRejection', (reason) => { console.error('Unhandled Rejection at:', reason); });
 process.on('uncaughtException', (error) => { console.error('Uncaught Exception:', error); process.exit(1); });
 
-app.listen(3001, () => console.log('SMTP API running on http://localhost:3001'));
+app.listen(6001, () => console.log('SMTP API running on http://localhost:6001'));

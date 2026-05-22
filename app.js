@@ -1,8 +1,8 @@
 // ── Config ────────────────────────────────────────────────────────────────────
 // API paths — auto-detect: production uses Nginx proxy, dev uses localhost
 const _isDev   = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const API      = _isDev ? 'http://localhost:3002' : window.location.origin + '/api';
-const SMTP_API = _isDev ? 'http://localhost:3001' : window.location.origin + '/smtp';
+const API      = _isDev ? 'http://localhost:6002' : window.location.origin + '/api';
+const SMTP_API = _isDev ? 'http://localhost:6001' : window.location.origin + '/smtp';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const state = {
@@ -422,7 +422,7 @@ async function login(e) {
     if (chatWrap) { chatWrap.classList.remove('hidden'); chatWrap.style.display='flex'; }
     initChat();
   } catch {
-    if (errEl) errEl.textContent = 'Cannot reach API server on port 3002. Please ensure the backend is running.';
+    if (errEl) errEl.textContent = 'Cannot reach API server on port 6002. Please ensure the backend is running.';
     if (btn)    btn.disabled=false;
     if (btnText)  btnText.classList.remove('hidden');
     if (spinner)  spinner.classList.add('hidden');
@@ -580,7 +580,7 @@ async function saveContact() {
     writeAudit('CREATE','contacts',`Created contact: ${name} (${email})`);
     renderAll();
   } else {
-    if (errEl) errEl.textContent='Save failed — is the API server running on port 3002?';
+    if (errEl) errEl.textContent='Save failed — is the API server running on port 6002?';
   }
 }
 
@@ -687,7 +687,7 @@ async function checkSmtp() {
     return ok;
   } catch {
     q('smtpDot').className = 'status-dot';
-    q('smtpStatusPanel').innerHTML = `<span style="color:var(--text-3)">SMTP server unreachable (port 3001).</span>`;
+    q('smtpStatusPanel').innerHTML = `<span style="color:var(--text-3)">SMTP server unreachable (port 6001).</span>`;
     return false;
   }
 }
@@ -1705,7 +1705,7 @@ async function checkLoginApiStatus() {
     // 200 = public health ok, 401 = server running but needs auth (also fine for login page)
     if (r.ok || r.status === 401) {
       if(dot)  dot.className='api-dot online';
-      if(text) text.textContent='API server online (port 3002)';
+      if(text) text.textContent='API server online (port 6002)';
     } else throw new Error('not ok');
   } catch {
     if(dot)  dot.className='api-dot offline';
@@ -5530,7 +5530,7 @@ window.saveContact = async function() {
     if(r&&r.ok) state.contacts=await r.json();
     renderAll();
   } else {
-    if(errEl) errEl.textContent='Save failed — check API server on port 3002.';
+    if(errEl) errEl.textContent='Save failed — check API server on port 6002.';
   }
 };
 
@@ -6167,7 +6167,7 @@ function renderAdminSystem() {
     <div class="admin-sys-card"><div class="admin-sys-label">KPIs</div><div class="admin-sys-val">${state.kpis.length}</div></div>
     <div class="admin-sys-card"><div class="admin-sys-label">Audit Entries</div><div class="admin-sys-val">${auditLog.length}</div></div>
     <div class="admin-sys-card"><div class="admin-sys-label">LocalStorage</div><div class="admin-sys-val">${(lsSize/1024).toFixed(1)} KB</div><div class="admin-sys-sub">of ~5MB limit</div></div>
-    <div class="admin-sys-card"><div class="admin-sys-label">API Server</div><div class="admin-sys-val" style="font-size:.9rem">Port 3002</div></div>`;
+    <div class="admin-sys-card"><div class="admin-sys-label">API Server</div><div class="admin-sys-val" style="font-size:.9rem">Port 6002</div></div>`;
 }
 
 function exportAllData() {

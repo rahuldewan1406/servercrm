@@ -135,10 +135,10 @@ async function seed() {
   const PERMS = RESOURCES.flatMap(r => ACTIONS.map(a => ({ id: `perm_${r}_${a}`, key: `${r}.${a}` })));
 
   for (const role of ROLES) {
-    await query(`INSERT INTO roles(id,name) VALUES($1,$2) ON CONFLICT(id) DO NOTHING`, [role.id, role.name]);
+    await query(`INSERT INTO roles(id,name) VALUES($1,$2) ON CONFLICT DO NOTHING`, [role.id, role.name]);
   }
   for (const perm of PERMS) {
-    await query(`INSERT INTO permissions(id,key) VALUES($1,$2) ON CONFLICT(id) DO NOTHING`, [perm.id, perm.key]);
+    await query(`INSERT INTO permissions(id,key) VALUES($1,$2) ON CONFLICT DO NOTHING`, [perm.id, perm.key]);
   }
 
   // Role-permission matrix
@@ -212,7 +212,7 @@ async function insert(table, record) {
   const vals = Object.values(record);
   const cols  = keys.join(',');
   const plh   = keys.map((_,i) => `$${i+1}`).join(',');
-  await query(`INSERT INTO ${table}(${cols}) VALUES(${plh}) ON CONFLICT(id) DO NOTHING`, vals);
+  await query(`INSERT INTO ${table}(${cols}) VALUES(${plh}) ON CONFLICT DO NOTHING`, vals);
   return record;
 }
 

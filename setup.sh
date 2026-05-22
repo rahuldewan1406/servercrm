@@ -1,182 +1,142 @@
 #!/bin/bash
-# ═══════════════════════════════════════════════════════════════════
-#  DIC-NHAI CRM — Auto-Setup Script
-#  Upload to S3, download to EC2, run as root
-#
-#  Usage:
-#    sudo bash setup.sh                  # Fresh install
-#    sudo bash setup.sh --update         # Pull latest + restart
-#    sudo bash setup.sh --status         # Check status
-# ═══════════════════════════════════════════════════════════════════
 set -euo pipefail
 
-# ── Config ─────────────────────────────────────────────────────────
 APP_DIR="/home/bhawesh/rahul/CRM"
 DOMAIN="nhaidevelopment.dic.org.in"
-APP_URL_PATH="/CRM"
+APP_PATH="/CRM"
 NODE_PORT=3002
 SMTP_PORT=3001
 
-# ── Colours ────────────────────────────────────────────────────────
-R='\033[0;31m' G='\033[0;32m' Y='\033[1;33m' B='\033[0;34m' NC='\033[0m'
+G='\033[0;32m' Y='\033[1;33m' R='\033[0;31m' B='\033[0;34m' NC='\033[0m'
 info()    { echo -e "${G}[✓]${NC} $1"; }
 warn()    { echo -e "${Y}[!]${NC} $1"; }
 error()   { echo -e "${R}[✗]${NC} $1"; exit 1; }
 section() { echo -e "\n${B}━━━ $1 ━━━${NC}"; }
 
-# ── Mode checks ────────────────────────────────────────────────────
-MODE="${1:-install}"
-
-if [ "$MODE" = "--status" ]; then
-    section "DIC-NHAI CRM Status"
-    echo "Node:    $(node -v 2>/dev/null || echo 'not installed')"
-    echo "npm:     $(npm -v 2>/dev/null || echo 'not installed')"
-    echo "pm2:     $(pm2 -v 2>/dev/null || echo 'not installed')"
-    echo "nginx:   $(nginx -v 2>&1 | head -1 || echo 'not installed')"
-    echo "pg:      $(psql --version 2>/dev/null || echo 'not installed')"
-    echo ""
-    pm2 list 2>/dev/null || echo "PM2 not running"
-    echo ""
-    echo "API:  $(curl -sf http://127.0.0.1:$NODE_PORT/health 2>/dev/null && echo 'UP' || echo 'DOWN')"
-    echo "Nginx: $(systemctl is-active nginx 2>/dev/null || echo 'inactive')"
-    exit 0
-fi
-
-if [ "$MODE" = "--update" ]; then
-    section "Pulling latest code"
-    cd $APP_DIR
-    git pull origin main
-    npm ci --omit=dev
-    pm2 reload nhai-crm-api  2>/dev/null || pm2 start ecosystem.config.js --env production
-    pm2 reload nhai-crm-smtp 2>/dev/null || true
-    pm2 save
-    info "Update complete → https://$DOMAIN$APP_URL_PATH/"
-    exit 0
-fi
-
-# ════════════════════════════════════════════════════════════════════
-#  FULL INSTALL
-# ════════════════════════════════════════════════════════════════════
 [ "$EUID" -ne 0 ] && error "Run as root: sudo bash setup.sh"
 
-section "1. System packages"
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq curl wget git nginx postgresql postgresql-contrib \
-    certbot python3-certbot-nginx ufw fail2ban lsb-release ca-certificates \
-    gnupg2 openssl 2>&1 | tail -3
-info "System packages ready"
-
-section "2. Node.js 20 LTS"
-if ! command -v node &>/dev/null || [[ "$(node -v)" != v20* ]]; then
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 2>&1 | tail -2
-    apt-get install -y -qq nodejs
+if [ "${1:-}" = "--update" ]; then
+    cd $APP_DIR && git pull origin main
+    npm ci --omit=dev 2>&1 | tail -2
+    pm2 reload nhai-crm-api 2>/dev/null || pm2 start ecosystem.config.js --env production
+    pm2 save --force
+    info "Done → https://$DOMAIN$APP_PATH/"; exit 0
 fi
-npm install -g pm2 2>/dev/null
+
+if [ "${1:-}" = "--status" ]; then
+    node -v; pm2 -v; nginx -v 2>&1; psql --version
+    pm2 list 2>/dev/null || true
+    curl -sf http://127.0.0.1:$NODE_PORT/health && echo "API: UP" || echo "API: DOWN"
+    exit 0
+fi
+
+section "1. Install nginx (skip apt if broken)"
+if command -v nginx &>/dev/null; then
+    info "Nginx already installed: $(nginx -v 2>&1)"
+else
+    info "Installing nginx..."
+    apt-get install -y --allow-change-held-packages \
+        -o APT::Update::Error-Mode=any \
+        nginx 2>&1 | tail -3 || \
+    apt-get install -y -f nginx 2>&1 | tail -3 || \
+    { warn "apt failed — trying dpkg fix"; dpkg --configure -a 2>/dev/null; apt-get install -y nginx; }
+    info "Nginx installed"
+fi
+
+section "2. Install certbot via snap"
+if command -v certbot &>/dev/null; then
+    info "Certbot already installed"
+else
+    snap install --classic certbot 2>/dev/null \
+        && ln -sf /snap/bin/certbot /usr/bin/certbot \
+        && info "Certbot installed" \
+        || warn "Certbot install failed — SSL step will be skipped"
+fi
+
+section "3. Node + PM2"
+node -v | grep -qE "v(18|20|22)" || error "Node 18+ required"
+pm2 -v &>/dev/null || npm install -g pm2 --silent
 info "Node $(node -v) | PM2 $(pm2 -v)"
 
-section "3. PostgreSQL database"
-systemctl enable postgresql --now
+section "4. PostgreSQL"
+systemctl enable postgresql --now 2>/dev/null || true
+DB_EXISTS=$(sudo -u postgres psql -tAc \
+    "SELECT 1 FROM pg_database WHERE datname='nhai_crm'" 2>/dev/null || echo "")
 
-DB_PASS=""
-DB_EXISTS=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='nhai_crm'" 2>/dev/null || echo "")
-
-if [ "$DB_EXISTS" != "1" ]; then
-    DB_PASS=$(openssl rand -base64 24 | tr -d '/+=')
-    sudo -u postgres psql -c "CREATE USER nhai_crm_user WITH PASSWORD '$DB_PASS';" 2>/dev/null || true
-    sudo -u postgres createdb -O nhai_crm_user nhai_crm 2>/dev/null
-    warn "PostgreSQL created: nhai_crm | user: nhai_crm_user | pass: $DB_PASS"
-    warn "⚠ Save this password — shown only once!"
-else
-    # Try to read from existing .env
-    DB_PASS=$(grep DATABASE_URL $APP_DIR/.env 2>/dev/null | sed 's/.*:\(.*\)@.*/\1/' || echo "")
+if [ "$DB_EXISTS" = "1" ]; then
+    info "Database nhai_crm exists"
+    DB_PASS=$(grep "^DATABASE_URL=" $APP_DIR/.env 2>/dev/null \
+        | sed -E 's|.*://[^:]+:([^@]+)@.*|\1|' || echo "")
     if [ -z "$DB_PASS" ]; then
-        read -sp "Enter existing DB password for nhai_crm_user: " DB_PASS; echo
+        read -sp "  Enter DB password for nhai_crm_user: " DB_PASS; echo
     fi
-    info "Using existing nhai_crm database"
+else
+    DB_PASS=$(openssl rand -base64 24 | tr -d '/+=')
+    sudo -u postgres psql -c \
+        "CREATE USER nhai_crm_user WITH PASSWORD '$DB_PASS';" 2>/dev/null \
+        || sudo -u postgres psql -c \
+        "ALTER USER nhai_crm_user WITH PASSWORD '$DB_PASS';" 2>/dev/null
+    sudo -u postgres createdb -O nhai_crm_user nhai_crm 2>/dev/null
+    info "Database created"
 fi
 
-section "4. Application dependencies"
+section "5. npm install"
 cd $APP_DIR
 npm ci --omit=dev 2>&1 | tail -3
-info "npm packages installed"
+info "Dependencies installed"
 
-section "5. Environment file"
+section "6. Environment (.env)"
 if [ -f "$APP_DIR/.env" ]; then
-    info ".env already exists — skipping generation"
-    source $APP_DIR/.env 2>/dev/null || true
+    info ".env exists — keeping it"
 else
-    JWT_SECRET=$(openssl rand -hex 64)
-    ADMIN_PASS=$(openssl rand -base64 12 | tr -d '/+=')
-
-    cat > $APP_DIR/.env << ENVEOF
+    JWT=$(openssl rand -hex 64)
+    APASS=$(openssl rand -base64 12 | tr -d '/+=')
+    cat > $APP_DIR/.env << EOF
 NODE_ENV=production
 PORT=$NODE_PORT
 SMTP_SERVER_PORT=$SMTP_PORT
-
-# PostgreSQL
 DATABASE_URL=postgresql://nhai_crm_user:${DB_PASS}@localhost:5432/nhai_crm
 DB_SSL=false
-
-# JWT — NEVER share this
-JWT_SECRET=${JWT_SECRET}
-
-# Admin seed password (used only on first start)
-ADMIN_PASSWORD=${ADMIN_PASS}
-
-# CORS — must match your domain exactly
+JWT_SECRET=${JWT}
+ADMIN_PASSWORD=${APASS}
 ALLOWED_ORIGIN=https://${DOMAIN}
-
-# SMTP (optional — for email notifications)
-# SMTP_HOST=smtp.gmail.com
-# SMTP_PORT=587
-# SMTP_USER=your@email.com
-# SMTP_PASS=your-app-password
-ENVEOF
+EOF
     chmod 600 $APP_DIR/.env
-    warn "Admin credentials → admin@crm.local / $ADMIN_PASS"
-    warn "⚠ Change this password after first login!"
+    warn "Admin → admin@crm.local / $APASS  ← SAVE THIS"
 fi
 
-section "6. Database migration + seed"
+section "7. Database migration"
+cd $APP_DIR
 node -e "
   require('dotenv').config({ path: '$APP_DIR/.env' });
-  require('$APP_DIR/server/db').init()
-    .then(() => { console.log('DB ready'); process.exit(0); })
-    .catch(e => { console.error('DB error:', e.message); process.exit(1); });
+  require('./server/db').init()
+    .then(() => { console.log('  DB ready'); process.exit(0); })
+    .catch(e => { console.error('  DB error:', e.message); process.exit(1); });
 "
-info "Database migrated and seeded"
+info "DB migrated and seeded"
 
-section "7. Nginx configuration"
-mkdir -p /var/log/nginx
-
-# Add rate limit zone if not present
+section "8. Nginx config"
 grep -q "api_limit" /etc/nginx/nginx.conf 2>/dev/null || \
-    sed -i '/http {/a\\tlimit_req_zone $binary_remote_addr zone=api_limit:10m rate=30r/m;' /etc/nginx/nginx.conf
+    sed -i 's|http {|http {\n\tlimit_req_zone $binary_remote_addr zone=api_limit:10m rate=30r/m;|' \
+    /etc/nginx/nginx.conf 2>/dev/null || true
 
 cat > /etc/nginx/sites-available/nhai-crm << NGINXEOF
 server {
     listen 80;
-    listen [::]:80;
     server_name ${DOMAIN};
 
     access_log /var/log/nginx/nhai-crm-access.log;
     error_log  /var/log/nginx/nhai-crm-error.log warn;
 
-    # Security headers
     add_header X-Frame-Options        "SAMEORIGIN"  always;
     add_header X-Content-Type-Options "nosniff"     always;
     add_header X-XSS-Protection       "1; mode=block" always;
-    add_header Referrer-Policy        "strict-origin-when-cross-origin" always;
 
-    # ── Frontend — served from /CRM/ ──────────────────────────────
-    location ${APP_URL_PATH}/ {
+    location ${APP_PATH}/ {
         alias ${APP_DIR}/;
         index index.html;
-        try_files \$uri \$uri/ ${APP_URL_PATH}/index.html;
-
-        # Cache static assets
-        location ~* \.(css|js|svg|ico|png|woff2|woff|ttf)\$ {
+        try_files \$uri \$uri/ ${APP_PATH}/index.html;
+        location ~* \.(css|js|svg|ico|png|woff2)\$ {
             alias ${APP_DIR}/;
             expires 30d;
             add_header Cache-Control "public, immutable";
@@ -184,7 +144,6 @@ server {
         }
     }
 
-    # ── API proxy ─────────────────────────────────────────────────
     location /api/ {
         proxy_pass         http://127.0.0.1:${NODE_PORT}/;
         proxy_http_version 1.1;
@@ -196,102 +155,71 @@ server {
         limit_req          zone=api_limit burst=20 nodelay;
     }
 
-    # ── SMTP proxy ────────────────────────────────────────────────
     location /smtp/ {
-        proxy_pass       http://127.0.0.1:${SMTP_PORT}/;
+        proxy_pass      http://127.0.0.1:${SMTP_PORT}/;
         proxy_set_header Host \$host;
-        proxy_read_timeout 15s;
     }
 
-    # ── Health (for load balancer checks) ─────────────────────────
-    location = /health {
-        proxy_pass http://127.0.0.1:${NODE_PORT}/health;
-        access_log off;
-    }
-
-    # ── Security blocks ───────────────────────────────────────────
-    location ~* \.(env|git|sql|bak|log|json)\$ { return 404; }
-    location ~ /\.                              { return 404; }
-    location = /                                { return 301 \$scheme://\$host${APP_URL_PATH}/; }
-    location = /favicon.ico                     { try_files \$uri =204; access_log off; }
-    location = /robots.txt                      { return 200 "User-agent: *\nDisallow: /api/\n"; }
+    location = /health { proxy_pass http://127.0.0.1:${NODE_PORT}/health; access_log off; }
+    location ~* \.(env|git|sql|bak|log)\$ { return 404; }
+    location ~ /\.     { return 404; }
+    location = /       { return 301 \$scheme://\$host${APP_PATH}/; }
 }
 NGINXEOF
 
 ln -sf /etc/nginx/sites-available/nhai-crm /etc/nginx/sites-enabled/nhai-crm
-rm -f /etc/nginx/sites-enabled/default
+rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 nginx -t && systemctl enable nginx --now && systemctl reload nginx
-info "Nginx configured → http://$DOMAIN$APP_URL_PATH/"
+info "Nginx configured"
 
-section "8. SSL certificate (Let's Encrypt)"
+section "9. SSL"
 if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-    info "SSL certificate already exists"
-else
-    warn "Getting SSL certificate for $DOMAIN ..."
+    info "SSL cert exists"
+elif command -v certbot &>/dev/null; then
     certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos \
         --email "webmaster@nhai.gov.in" --redirect 2>&1 | tail -5 \
-        && info "SSL certificate obtained ✅" \
-        || warn "Certbot failed — ensure DNS points to this server, then run: sudo certbot --nginx -d $DOMAIN"
+        && info "SSL obtained" \
+        || warn "SSL failed — run manually: sudo certbot --nginx -d $DOMAIN"
+else
+    warn "Certbot not found — skipping SSL"
 fi
 
-section "9. Firewall (UFW)"
-ufw --force enable 2>/dev/null
-ufw allow ssh        2>/dev/null || true
-ufw allow 'Nginx Full' 2>/dev/null || true
-ufw deny $NODE_PORT  2>/dev/null || true
-ufw deny $SMTP_PORT  2>/dev/null || true
-info "Firewall: 80/443 open, $NODE_PORT/$SMTP_PORT blocked externally"
-
-section "10. Start application (PM2)"
+section "10. PM2 start"
 cd $APP_DIR
 pm2 delete all 2>/dev/null || true
 pm2 start ecosystem.config.js --env production
-pm2 save
+pm2 save --force
+PM2_CMD=$(pm2 startup systemd 2>/dev/null | grep "^sudo" | tail -1 || echo "")
+[ -n "$PM2_CMD" ] && eval "$PM2_CMD" 2>/dev/null || true
 
-# Auto-start on reboot
-env PATH=$PATH:/usr/bin pm2 startup systemd -u root --hp /root 2>/dev/null \
-    | grep -E "^sudo" | bash 2>/dev/null || true
-systemctl enable pm2-root 2>/dev/null || true
+section "11. Firewall"
+ufw --force enable 2>/dev/null || true
+ufw allow 'Nginx Full' 2>/dev/null || true
+ufw allow OpenSSH 2>/dev/null || true
+ufw deny $NODE_PORT 2>/dev/null || true
+ufw deny $SMTP_PORT 2>/dev/null || true
+info "Firewall configured"
 
-section "11. Log rotation"
-cat > /etc/logrotate.d/nhai-crm << LOGROTATE
-/var/log/nginx/nhai-crm*.log {
-    daily
-    rotate 14
-    compress
-    delaycompress
-    missingok
-    notifempty
-}
-LOGROTATE
+( crontab -l 2>/dev/null | grep -v certbot
+  echo "0 3 * * * certbot renew -q --post-hook 'nginx -s reload'"
+) | crontab - 2>/dev/null || true
 
-# ── SSL auto-renewal ────────────────────────────────────────────────
-(crontab -l 2>/dev/null | grep -v certbot; echo "0 3 * * * certbot renew --quiet --post-hook 'systemctl reload nginx'") | crontab -
-
-# ── Final health check ──────────────────────────────────────────────
 sleep 4
-API_STATUS=$(curl -sf http://127.0.0.1:$NODE_PORT/health 2>/dev/null && echo "✅ UP" || echo "❌ DOWN")
+API_UP=$(curl -sf http://127.0.0.1:$NODE_PORT/health 2>/dev/null && echo "yes" || echo "no")
+APASS=$(grep "^ADMIN_PASSWORD=" $APP_DIR/.env 2>/dev/null | cut -d= -f2 || echo "")
 
 echo ""
-echo -e "${G}══════════════════════════════════════════════════════${NC}"
-echo -e "${G}  DIC-NHAI CRM — Deployment Complete!${NC}"
-echo -e "${G}══════════════════════════════════════════════════════${NC}"
+echo -e "${G}══════════════════════════════════════════════════${NC}"
+echo -e "${G}  DIC-NHAI CRM — Ready!${NC}"
+echo -e "${G}══════════════════════════════════════════════════${NC}"
+echo "  URL:  https://$DOMAIN$APP_PATH/"
+[ "$API_UP" = "yes" ] \
+    && echo -e "  API:  ${G}✅ Running${NC}" \
+    || echo -e "  API:  ${R}❌ Down — run: pm2 logs nhai-crm-api${NC}"
 echo ""
-echo "  URL:     https://$DOMAIN$APP_URL_PATH/"
-echo "  API:     $API_STATUS"
-echo "  PM2:     $(pm2 list --no-color 2>/dev/null | grep -E 'online|stopped' | wc -l) process(es) running"
+[ -n "$APASS" ] && echo -e "  ${Y}Login: admin@crm.local / $APASS${NC}"
 echo ""
-echo "  Useful commands:"
-echo "    pm2 status                    # App status"
-echo "    pm2 logs nhai-crm-api         # Live API logs"
-echo "    sudo bash setup.sh --update   # Deploy updates"
-echo "    sudo bash setup.sh --status   # Quick status check"
-echo ""
-
-# Print credentials only if freshly generated
-ADMIN_PASS_PRINT=$(grep ADMIN_PASSWORD $APP_DIR/.env 2>/dev/null | cut -d= -f2)
-if [ -n "$ADMIN_PASS_PRINT" ]; then
-    echo -e "${Y}  Login: admin@crm.local / $ADMIN_PASS_PRINT${NC}"
-    echo -e "${Y}  ⚠ Change this password after first login!${NC}"
-fi
+echo "  pm2 status                    # process list"
+echo "  pm2 logs nhai-crm-api         # live logs"
+echo "  sudo bash setup.sh --update   # deploy updates"
 echo ""
