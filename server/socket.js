@@ -24,7 +24,7 @@ function initSocket(httpServer, allowedOrigin) {
     } catch { next(new Error('Invalid token')); }
   });
 
-  io.on('connection', (socket) => {
+  io.on('connection', (socket) => { console.log('[Socket] New connection:', socket.id, 'user:', socket.user?.id);
     const userId = socket.user.id;
     onlineUsers.set(userId, socket.id);
 
