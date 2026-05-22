@@ -183,7 +183,7 @@ window.startRealVideoCall = async function() {
   if (!_roomId) return;
   const r = await apiFetch('/video/rooms', { method:'POST', body:JSON.stringify({ name:'crm-'+_roomId.slice(0,8) }) });
   const room = await r?.json();
-  if (!room?.url) { alert('Add DAILY_API_KEY to .env for video calls.'); return; }
+  if (!room?.url) { alert('Video call failed.'); return; }
   _socket?.emit('call:start', { room_id: _roomId, daily_room_url: room.url });
   window.open(room.url, '_blank', 'width=900,height=600');
 };
