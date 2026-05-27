@@ -218,3 +218,29 @@ window.initChat = function() { chatConnect(); setTimeout(chatFixSend, 500); };
 // Single init
 setTimeout(() => { if (state?.accessToken) { chatConnect(); chatFixSend(); } }, 2000);
 console.log('[Chat] loaded v3');
+
+// ── Fix emoji picker closing before insert ────────────────────────
+window.insertEmoji = function(emoji) {
+  const input = document.getElementById('chatInput');
+  if (!input) return;
+  const pos = input.selectionStart || 0;
+  input.value = input.value.slice(0, pos) + emoji + input.value.slice(input.selectionEnd || pos);
+  input.selectionStart = input.selectionEnd = pos + emoji.length;
+  input.focus();
+  document.getElementById('emojiPicker')?.classList.add('hidden');
+};
+
+// ── Fix emoji picker visibility ───────────────────────────────────
+const _emojiStyle = document.createElement('style');
+_emojiStyle.textContent = `
+  #emojiPicker {
+    position: fixed !important;
+    bottom: 120px !important;
+    left: auto !important;
+    right: 20px !important;
+    z-index: 99999 !important;
+    max-height: 300px !important;
+    overflow-y: auto !important;
+  }
+`;
+document.head.appendChild(_emojiStyle);

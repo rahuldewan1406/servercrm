@@ -368,7 +368,9 @@
           <button class="btn-primary-sm" onclick="openModal('projectModal')">+ New Project</button>
           <button class="btn-secondary-sm" onclick="openModal('milestoneModal')">+ Milestone</button>
           <button class="btn-secondary-sm" onclick="openModal('taskModal')">+ Task</button>
+          <button class="btn-secondary-sm" style="background:#0052cc;color:#fff;border-color:#0052cc" onclick="openModal('jiraConfigModal')">🔗 Jira Sync</button>
           <button class="btn-ghost-sm" onclick="openModal('activityModal')">+ Log Activity</button>
+          <button class="btn-secondary-sm" style="background:#6554c0;color:#fff;border-color:#6554c0" onclick="openJiraReport()">📊 Jira Report</button>
         </div>
       </div>
 
@@ -414,6 +416,21 @@
       <!-- Gantt / Timeline View -->
       <div id="projectGanttView" class="project-view">
         <div class="gantt-wrap" id="ganttWrap"></div>
+      </div>
+
+      <!-- Jira Panel -->
+      <div id="jiraPanel" class="jira-panel hidden">
+        <div class="jira-panel-header">
+          <div class="jira-panel-title">🔗 Jira Issues <span id="jiraProjectKey2" class="jira-project-key"></span></div>
+          <div class="jira-panel-actions">
+            <input id="jiraSearchInput" class="jira-search" placeholder="🔍 Search issues…" oninput="filterJiraIssues()" />
+            <select id="jiraStatusFilter" class="filter-select" onchange="filterJiraIssues()" style="font-size:.78rem"><option value="">All Statuses</option><option>To Do</option><option>In Progress</option><option>In Review</option><option>Done</option><option>Blocked</option></select>
+            <select id="jiraTypeFilter" class="filter-select" onchange="filterJiraIssues()" style="font-size:.78rem"><option value="">All Types</option><option>Story</option><option>Task</option><option>Bug</option><option>Epic</option><option>Sub-task</option></select>
+            <button class="btn-secondary-sm" onclick="syncJiraIssues()" id="jiraSyncBtn">🔄 Refresh</button>
+          </div>
+        </div>
+        <div id="jiraIssueList" class="jira-issue-list"><div class="jira-empty">Click Jira Sync to connect.</div></div>
+        <div id="jiraStats" class="jira-stats"></div>
       </div>
 
       <!-- Tasks & Milestones Panel -->
@@ -765,15 +782,30 @@
         <button class="rtab" onclick="switchReport('projects')">📁 Projects</button>
         <button class="rtab" onclick="switchReport('activities')">📋 Activities</button>
         <button class="rtab" onclick="switchReport('pipeline')">💰 Pipeline</button>
+        <button class="rtab" onclick="switchReport('userwise')">👤 User-wise</button>
+        <button class="rtab" onclick="switchReport('complete')">📊 Complete</button>
       </div>
 
       <!-- Report toolbar -->
       <div class="report-toolbar" id="reportToolbar">
         <input id="reportSearch" class="search-box" placeholder="🔍  Search…" oninput="renderReport()" style="max-width:260px" />
         <div id="reportFilters" class="report-filters"></div>
-        <div style="margin-left:auto;display:flex;gap:.5rem">
+        <!-- User filter -->
+        <select id="reportUserFilter" class="filter-select hidden" onchange="renderReport()" style="min-width:160px">
+          <option value="">All Users</option>
+        </select>
+        <!-- Date range -->
+        <div class="report-date-range" id="reportDateRange" style="display:none">
+          <input type="date" id="reportDateFrom" class="filter-select" onchange="renderReport()" title="From date" />
+          <span style="color:var(--text-3);font-size:.8rem">→</span>
+          <input type="date" id="reportDateTo" class="filter-select" onchange="renderReport()" title="To date" />
+        </div>
+        <div style="margin-left:auto;display:flex;gap:.5rem;flex-wrap:wrap">
+          <button class="btn-secondary-sm" id="reportGroupBtn" onclick="toggleReportGrouping()" style="display:none">⊞ Group by User</button>
           <button class="btn-secondary-sm" onclick="exportCurrentCSV()">⬇ Export CSV</button>
           <button class="btn-secondary-sm" onclick="exportCurrentPDF()">⬇ Export PDF</button>
+          <button class="btn-secondary-sm" onclick="exportCurrentExcel()">⬇ Export Excel</button>
+          <button class="btn-secondary-sm" onclick="printReport()">🖨 Print</button>
         </div>
       </div>
 
@@ -1034,18 +1066,71 @@
   </dialog>
 
   <!-- Ticket Modal -->
-  <dialog id="ticketModal" class="modal-dialog">
-    <div class="modal-header"><h3>New Ticket</h3><button class="modal-close" onclick="closeModal('ticketModal')">✕</button></div>
+  <dialog id="ticketModal" class="modal-dialog modal-lg" style="max-width:720px">
+    <div class="modal-header">
+      <h3>🎫 New Support Ticket</h3>
+      <button class="modal-close" onclick="closeModal('ticketModal')">✕</button>
+    </div>
     <form id="ticketForm" class="modal-body">
-      <label>Title<input id="ticketTitle" placeholder="Login page broken on mobile" /></label>
-      <label>Priority<select id="ticketPriority"><option>Low</option><option>Medium</option><option>High</option></select></label>
-      <label>Status<select id="ticketStatus"><option>Open</option><option>In Progress</option><option>Resolved</option></select></label>
+      <div class="ticket-section-title">📋 Basic Information</div>
+      <label class="span2">Title / Issue Summary *<input id="ticketTitle" placeholder="e.g. Login page broken — NHAI-Mobile" /></label>
+      <label>Priority<select id="ticketPriority"><option>Low</option><option selected>Medium</option><option>High</option><option>Critical</option></select></label>
+      <label>Status<select id="ticketStatus"><option>Open</option><option>In Progress</option><option>In Review</option><option>Resolved</option><option>Closed</option></select></label>
+      <label>Ticket Type<select id="ticketType"><option>Bug</option><option>Feature Request</option><option>Support Query</option><option>Change Request</option><option>Incident</option><option>Enhancement</option></select></label>
+      <label>Severity<select id="ticketSeverity"><option>S1 - Critical</option><option>S2 - High</option><option selected>S3 - Medium</option><option>S4 - Low</option></select></label>
+
+      <div class="ticket-section-title span2">📦 Module <button type="button" class="cca-btn" onclick="openModal('manageModulesModal')" style="margin-left:.5rem;font-size:.7rem">⚙ Manage</button></div>
+      <label>Module *<select id="ticketModule" onchange="onTicketModuleChange(this.value)"><option value="">— Select Module —</option></select></label>
+      <label>Sub-module / Component<input id="ticketSubmodule" placeholder="e.g. Authentication, API" /></label>
+      <label>Environment<select id="ticketEnv"><option>Production</option><option>Staging</option><option>Development</option><option>UAT</option></select></label>
+      <label>Platform<select id="ticketPlatform"><option value="">— Auto from module —</option><option>Web</option><option>Mobile</option><option>Backend API</option><option>Database</option><option>Other</option></select></label>
+
+      <div class="ticket-section-title span2">👤 Assignment & Linking</div>
       <label>Link to Contact<select id="ticketContact"><option value="">— None —</option></select></label>
-      <div class="modal-footer">
-        <button type="button" class="btn-modal-secondary" onclick="closeModal('ticketModal')">Cancel</button>
-        <button type="button" class="btn-modal-primary" onclick="saveTicket()">Create Ticket</button>
+      <label>Assigned To<select id="ticketAssignee"><option value="">— Unassigned —</option></select></label>
+      <label>Due Date<input type="date" id="ticketDueDate" /></label>
+      <label>Jira Issue Key<input id="ticketJiraKey" placeholder="e.g. NHAI-6868" style="font-family:monospace" /></label>
+
+      <div class="ticket-section-title span2">📝 Description</div>
+      <label class="span2">Description / Steps to Reproduce<textarea id="ticketDesc" rows="3" placeholder="Describe the issue, steps to reproduce…"></textarea></label>
+      <label class="span2">Expected Behaviour<textarea id="ticketExpected" rows="2" placeholder="What should happen?"></textarea></label>
+      <label class="span2">Actual Behaviour / Error<textarea id="ticketActual" rows="2" placeholder="What actually happens? Paste error if any."></textarea></label>
+
+      <div class="ticket-section-title span2">📎 Attachments</div>
+      <div class="span2">
+        <div class="ticket-attachment-zone" id="ticketAttachZone"
+          onclick="q('ticketFileInput').click()"
+          ondragover="ticketDragOver(event)" ondragleave="ticketDragLeave(event)" ondrop="ticketFileDrop(event)">
+          <div style="font-size:1.4rem;margin-bottom:.3rem">📎</div>
+          <div style="font-weight:600;font-size:.85rem">Drop files here or click to browse</div>
+          <div style="font-size:.75rem;color:var(--text-3);margin-top:.2rem">PNG, JPG, PDF, XLSX, DOCX, MP4 · Max 10MB per file</div>
+          <input type="file" id="ticketFileInput" class="hidden" multiple
+            accept=".png,.jpg,.jpeg,.gif,.pdf,.xlsx,.xls,.csv,.docx,.doc,.txt,.mp4,.zip"
+            onchange="ticketFileSelect(event)" />
+        </div>
+        <div id="ticketAttachList" class="ticket-attach-list"></div>
       </div>
+      <p id="ticketFormError" class="span2" style="color:var(--rose);font-size:.8rem;min-height:1rem"></p>
     </form>
+    <div class="modal-footer">
+      <button type="button" class="btn-modal-secondary" onclick="closeModal('ticketModal')">Cancel</button>
+      <button type="button" class="btn-modal-primary" id="saveTicketBtn" onclick="saveTicket()">🎫 Create Ticket</button>
+    </div>
+  </dialog>
+
+  <dialog id="manageModulesModal" class="modal-dialog">
+    <div class="modal-header"><h3>⚙ Manage Modules</h3><button class="modal-close" onclick="closeModal('manageModulesModal')">✕</button></div>
+    <div class="modal-body">
+      <div id="modulesList" class="modules-list"></div>
+      <div style="display:flex;gap:.5rem;margin-top:.75rem">
+        <input id="newModuleName" placeholder="Module name" style="flex:1;border:1px solid var(--border);border-radius:7px;padding:.45rem .7rem;font-size:.85rem" onkeydown="if(event.key==='Enter'){event.preventDefault();addModule()}" />
+        <select id="newModulePlatform" class="filter-select" style="width:130px">
+          <option value="">Any</option><option>Web</option><option>Mobile</option><option>Backend API</option><option>Database</option>
+        </select>
+        <button class="btn-primary-sm" onclick="addModule()">+ Add</button>
+      </div>
+    </div>
+    <div class="modal-footer"><button type="button" class="btn-modal-secondary" onclick="closeModal('manageModulesModal')">Close</button></div>
   </dialog>
 
   <!-- Edit Modal -->
@@ -1792,6 +1877,85 @@
 
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <!-- Jira Config Modal -->
+  <dialog id="jiraConfigModal" class="modal-dialog modal-lg">
+    <div class="modal-header"><h3>🔗 Jira Integration</h3><button class="modal-close" onclick="closeModal('jiraConfigModal')">✕</button></div>
+    <div class="modal-body">
+      <div style="display:flex;gap:.35rem;margin-bottom:.85rem">
+        <button class="jira-ctab active" onclick="switchJiraConfigTab('connect',this)">🔌 Connect</button>
+        <button class="jira-ctab" onclick="switchJiraConfigTab('import',this)">⬇ Import</button>
+      </div>
+      <div id="jiraConfigTab-connect" class="jira-config-content">
+        <label>Jira Base URL<input id="jiraBaseUrl" placeholder="https://yourcompany.atlassian.net" /></label>
+        <label>Project Key<input id="jiraProjectKey" placeholder="e.g. NHAI" style="text-transform:uppercase" /></label>
+        <label>Email<input id="jiraEmail" type="email" placeholder="you@nhai.gov.in" /></label>
+        <label>API Token<input id="jiraApiToken" type="password" placeholder="Paste Jira API token" /></label>
+        <label>Link to CRM Project<select id="jiraCrmProject"><option value="">— Select —</option></select></label>
+        <p id="jiraConnectStatus" style="font-size:.82rem;min-height:1.2rem;margin-top:.4rem"></p>
+      </div>
+      <div id="jiraConfigTab-import" class="jira-config-content hidden">
+        <label>JQL Filter<input id="jiraJql" placeholder="status != Done ORDER BY updated DESC" /></label>
+        <label>Max Issues<select id="jiraMaxResults"><option value="50">50</option><option value="100" selected>100</option><option value="200">200</option><option value="500">500</option></select></label>
+        <label><input type="checkbox" id="jiraImportAsTasks" checked /> Auto-create CRM Tasks from issues</label>
+        <label><input type="checkbox" id="jiraAutoSync" /> Auto-refresh every 15 minutes</label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn-modal-secondary" onclick="closeModal('jiraConfigModal')">Cancel</button>
+      <button type="button" class="btn-secondary-sm" onclick="testJiraConnection()">🔌 Test</button>
+      <button type="button" class="btn-modal-primary" onclick="saveAndSyncJira()">💾 Save & Sync</button>
+    </div>
+  </dialog>
+  <dialog id="jiraIssueModal" class="modal-dialog modal-lg">
+    <div class="modal-header"><h3 id="jiraIssueModalTitle">Issue</h3><button class="modal-close" onclick="closeModal('jiraIssueModal')">✕</button></div>
+    <div class="modal-body" id="jiraIssueModalBody"></div>
+    <div class="modal-footer"><button type="button" class="btn-modal-secondary" onclick="closeModal('jiraIssueModal')">Close</button><button type="button" class="btn-modal-primary" id="jiraImportTaskBtn" onclick="importJiraIssueAsTask()">+ Add as CRM Task</button></div>
+  </dialog>
+
+  <!-- Jira Report Modal -->
+  <dialog id="jiraReportModal" class="modal-dialog" style="max-width:900px;width:95vw">
+    <div class="modal-header" style="background:linear-gradient(135deg,#6554c0,#0052cc);color:#fff">
+      <h3 style="color:#fff">📊 Jira Project Report</h3>
+      <button class="modal-close" style="color:#fff;background:rgba(255,255,255,.2)" onclick="closeModal('jiraReportModal')">✕</button>
+    </div>
+    <div class="modal-body" style="padding:0">
+
+      <!-- Report header controls -->
+      <div style="padding:.85rem 1.1rem;border-bottom:1px solid var(--border);display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;background:var(--bg)">
+        <div style="display:flex;gap:.35rem">
+          <button class="jira-ctab active" id="jiraRptTabUser" onclick="switchJiraReportTab('userwise',this)">👤 User-wise</button>
+          <button class="jira-ctab" id="jiraRptTabAll" onclick="switchJiraReportTab('complete',this)">📋 Complete</button>
+          <button class="jira-ctab" id="jiraRptTabStatus" onclick="switchJiraReportTab('status',this)">📊 By Status</button>
+          <button class="jira-ctab" id="jiraRptTabType" onclick="switchJiraReportTab('type',this)">🏷 By Type</button>
+        </div>
+        <div style="display:flex;gap:.35rem;margin-left:auto">
+          <select id="jiraRptAssigneeFilter" class="filter-select" onchange="renderJiraReport()" style="font-size:.78rem">
+            <option value="">All Assignees</option>
+          </select>
+          <select id="jiraRptStatusFilter" class="filter-select" onchange="renderJiraReport()" style="font-size:.78rem">
+            <option value="">All Statuses</option>
+            <option>To Do</option><option>In Progress</option><option>In Review</option>
+            <option>Done</option><option>Blocked</option><option>Development done</option>
+          </select>
+          <input id="jiraRptSearch" class="search-box" placeholder="🔍 Search…" oninput="renderJiraReport()" style="max-width:160px;font-size:.78rem" />
+          <button class="btn-secondary-sm" onclick="exportJiraReportCSV()">⬇ CSV</button>
+          <button class="btn-secondary-sm" onclick="printJiraReport()">🖨 Print</button>
+        </div>
+      </div>
+
+      <!-- Summary stats bar -->
+      <div id="jiraRptSummary" style="display:flex;gap:.5rem;flex-wrap:wrap;padding:.65rem 1.1rem;background:#f8faff;border-bottom:1px solid var(--border)"></div>
+
+      <!-- Report content -->
+      <div id="jiraRptContent" style="padding:.75rem 1.1rem;max-height:60vh;overflow-y:auto"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn-modal-secondary" onclick="closeModal('jiraReportModal')">Close</button>
+      <button type="button" class="btn-modal-primary" onclick="exportJiraReportCSV()">⬇ Export CSV</button>
+    </div>
+  </dialog>
+
+
   <script src="app.js"></script>
   <script src="chat-real.js"></script>
 </body>

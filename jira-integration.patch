@@ -1,0 +1,934 @@
+From 5e0563997b9b86571c99f552b16a64d88f85739f Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Tue, 26 May 2026 09:12:05 +0000
+Subject: [PATCH] =?UTF-8?q?feat:=20Jira=20integration=20=E2=80=94=20sync?=
+ =?UTF-8?q?=20issues=20as=20CRM=20tasks?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+JIRA SYNC PANEL (Projects page):
+- 'Jira Sync' button (blue, with Jira logo) in projects header
+- Full-width issue panel below project board with:
+  - Issue list table: type icon | key | summary | status chip |
+    assignee avatar | priority | due date | action button
+  - Real-time search across key, summary, assignee
+  - Filter by status (To Do / In Progress / In Review / Done / Blocked)
+  - Filter by type (Story / Task / Bug / Epic / Sub-task)
+  - Stats bar: count per status + total
+  - '🔄 Refresh' button to re-fetch
+  - '+ Task' button per row → instant CRM task creation
+  - '✓ In CRM' badge on already-imported issues
+
+JIRA CONFIG MODAL (3 tabs):
+  Connect tab:
+  - Jira Base URL (e.g. https://yourcompany.atlassian.net)
+  - Project Key (e.g. NHAI, NH48)
+  - Email + API Token (with direct link to Atlassian token page)
+  - Link to CRM Project dropdown
+  - 'Test Connection' button — shows success/error inline
+  Connect tab:
+  - JQL Filter (custom query, e.g. sprint in openSprints())
+  - Max results: 50 / 100 / 200 / 500
+  - 'Import as CRM Tasks' checkbox
+  - 'Auto-refresh every 15 minutes' checkbox
+  Mapping tab:
+  - Jira → CRM field mapping table
+  - Status mapping: To Do/In Progress/In Review/Done/Blocked
+
+ISSUE DETAIL MODAL (click any issue row):
+  - Summary, status chip, type, priority, assignee, due date
+  - Created/updated timestamps
+  - Description (extracted from Atlassian Document Format)
+  - Subtasks list with status chips and keys
+  - Latest 3 comments with author and time-ago
+  - '+ Add as CRM Task' button (disabled if already linked)
+
+CRM TASK INTEGRATION:
+  - Jira key stored on task (task.jiraKey, task.jiraUrl)
+  - Jira badge shown on task items: blue pill with key
+  - Bulk import: all issues → tasks on sync (skips duplicates)
+  - Status mapping: Jira → CRM (To Do/In Progress/Done/Blocked)
+  - Priority mapping: Highest/High → High, Medium, Low/Lowest → Low
+  - Auto-sync interval: every 15 minutes if enabled
+  - Audit log entry on each sync
+
+ISSUE TYPES supported:
+  Story 🟩, Task 🟦, Bug 🔴, Epic 🟣, Sub-task 🔷,
+  Feature 🟨, Technical Task ⚙, Spike 🔱
+
+NOTE ON CORS:
+  Jira Cloud API blocks direct browser requests. Options:
+  1. Use Atlassian CORS proxy or browser extension for testing
+  2. Route /jira-proxy/ through the CRM nginx → Jira (recommended)
+  3. Use Jira Server (on-premise) which allows CORS configuration
+---
+ app.js     | 496 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ index.html | 160 +++++++++++++++++
+ styles.css | 164 ++++++++++++++++++
+ 3 files changed, 820 insertions(+)
+
+diff --git a/app.js b/app.js
+index cd0c138..1789946 100644
+--- a/app.js
++++ b/app.js
+@@ -6209,3 +6209,499 @@ function adminResetLocalStorage() {
+   location.reload();
+ }
+ 
++
++// ══════════════════════════════════════════════════════════════════
++//  JIRA INTEGRATION
++// ══════════════════════════════════════════════════════════════════
++
++// ── State ─────────────────────────────────────────────────────────
++let _jiraConfig  = JSON.parse(localStorage.getItem('crm_jira_config') || 'null') || {};
++let _jiraIssues  = [];
++let _jiraFiltered = [];
++let _jiraAutoSyncInterval = null;
++let _jiraViewingIssueKey = null;
++
++function saveJiraConfig() {
++  // Don't store API token in plain localStorage — warn user
++  localStorage.setItem('crm_jira_config', JSON.stringify(_jiraConfig));
++}
++
++// ── Jira type icons ────────────────────────────────────────────────
++const JIRA_TYPE_ICONS = {
++  'Story':    '🟩', 'Task': '🟦', 'Bug': '🔴', 'Epic': '🟣',
++  'Sub-task': '🔷', 'Feature': '🟨', 'Improvement': '🔵',
++  'New Feature': '⭐', 'Technical Task': '⚙', 'Spike': '🔱',
++};
++const JIRA_PRIO_ICONS = {
++  'Highest':'🔺', 'High':'🔼', 'Medium':'▶', 'Low':'🔽', 'Lowest':'🔻',
++};
++const JIRA_STATUS_CLASS = {
++  'To Do':'jira-todo', 'Open':'jira-open', 'Backlog':'jira-todo',
++  'In Progress':'jira-inprogress', 'In Development':'jira-inprogress',
++  'In Review':'jira-inreview', 'Code Review':'jira-inreview',
++  'Done':'jira-done', 'Closed':'jira-done', 'Resolved':'jira-done',
++  'Blocked':'jira-blocked', 'Impediment':'jira-blocked',
++};
++
++function jiraStatusClass(status) {
++  return JIRA_STATUS_CLASS[status] || 'jira-todo';
++}
++
++// ── Config modal ───────────────────────────────────────────────────
++function switchJiraConfigTab(tab, btn) {
++  document.querySelectorAll('.jira-ctab').forEach(b=>b.classList.remove('active'));
++  if (btn) btn.classList.add('active');
++  document.querySelectorAll('.jira-config-content').forEach(c=>c.classList.add('hidden'));
++  q(`jiraConfigTab-${tab}`)?.classList.remove('hidden');
++}
++
++// Populate config modal with saved values
++const _prevOpenModal = openModal;
++window.openModal = function(id) {
++  _prevOpenModal(id);
++  if (id === 'jiraConfigModal') {
++    q('jiraBaseUrl').value    = _jiraConfig.baseUrl  || '';
++    q('jiraProjectKey').value = _jiraConfig.projectKey || '';
++    q('jiraEmail').value      = _jiraConfig.email    || '';
++    q('jiraApiToken').value   = _jiraConfig.apiToken || '';
++    q('jiraJql').value        = _jiraConfig.jql      || '';
++    q('jiraMaxResults').value = _jiraConfig.maxResults || '100';
++    if (_jiraConfig.importAsTasks !== undefined)
++      q('jiraImportAsTasks').checked = _jiraConfig.importAsTasks;
++    if (_jiraConfig.autoSync)
++      q('jiraAutoSync').checked = _jiraConfig.autoSync;
++    // Populate CRM project dropdown
++    const sel = q('jiraCrmProject');
++    if (sel) {
++      sel.innerHTML = '<option value="">— Select CRM Project —</option>' +
++        state.projects.map(p=>`<option value="${p.id}" ${_jiraConfig.crmProjectId===p.id?'selected':''}>${p.name}</option>`).join('');
++    }
++  }
++};
++
++// ── Test connection ────────────────────────────────────────────────
++async function testJiraConnection() {
++  const statusEl = q('jiraConnectStatus');
++  const baseUrl    = q('jiraBaseUrl')?.value.trim().replace(/\/$/, '');
++  const email      = q('jiraEmail')?.value.trim();
++  const apiToken   = q('jiraApiToken')?.value.trim();
++  const projectKey = q('jiraProjectKey')?.value.trim().toUpperCase();
++
++  if (!baseUrl || !email || !apiToken) {
++    if (statusEl) statusEl.innerHTML = '<span style="color:var(--rose)">⚠ Fill in Base URL, Email, and API Token first.</span>';
++    return;
++  }
++  if (statusEl) statusEl.innerHTML = '⏳ Testing connection…';
++
++  const creds = btoa(`${email}:${apiToken}`);
++  const url   = `${baseUrl}/rest/api/3/project/${projectKey || ''}`;
++
++  try {
++    const r = await fetch(url, {
++      headers: { 'Authorization': `Basic ${creds}`, 'Accept': 'application/json' }
++    });
++    if (r.ok) {
++      const data = await r.json();
++      const name = data.name || data[0]?.name || projectKey;
++      if (statusEl) statusEl.innerHTML = `<span style="color:#16a34a">✅ Connected! Project: <strong>${name}</strong></span>`;
++    } else if (r.status === 401) {
++      if (statusEl) statusEl.innerHTML = '<span style="color:var(--rose)">❌ Invalid credentials. Check email and API token.</span>';
++    } else if (r.status === 404) {
++      if (statusEl) statusEl.innerHTML = '<span style="color:var(--rose)">❌ Project not found. Check the project key.</span>';
++    } else {
++      if (statusEl) statusEl.innerHTML = `<span style="color:var(--rose)">❌ Error ${r.status}: ${r.statusText}</span>`;
++    }
++  } catch(e) {
++    if (statusEl) statusEl.innerHTML = `<span style="color:var(--rose)">❌ Connection failed: ${e.message}<br>Check CORS — Jira Cloud API requires requests from allowed origins. For testing, use a proxy or browser extension.</span>`;
++  }
++}
++
++// ── Save config and sync ───────────────────────────────────────────
++async function saveJiraConfig() {
++  _jiraConfig = {
++    baseUrl:      q('jiraBaseUrl')?.value.trim().replace(/\/$/, ''),
++    projectKey:   q('jiraProjectKey')?.value.trim().toUpperCase(),
++    email:        q('jiraEmail')?.value.trim(),
++    apiToken:     q('jiraApiToken')?.value.trim(),
++    jql:          q('jiraJql')?.value.trim(),
++    maxResults:   q('jiraMaxResults')?.value || '100',
++    importAsTasks:q('jiraImportAsTasks')?.checked ?? true,
++    autoSync:     q('jiraAutoSync')?.checked ?? false,
++    crmProjectId: q('jiraCrmProject')?.value || '',
++  };
++  saveJiraConfig();
++  closeModal('jiraConfigModal');
++
++  if (!_jiraConfig.baseUrl || !_jiraConfig.email || !_jiraConfig.apiToken) {
++    pushNotif('Jira config saved','Fill in credentials to start syncing','⚠️','info');
++    return;
++  }
++  await syncJiraIssues();
++
++  // Auto-sync
++  if (_jiraConfig.autoSync) {
++    clearInterval(_jiraAutoSyncInterval);
++    _jiraAutoSyncInterval = setInterval(syncJiraIssues, 15 * 60 * 1000);
++  }
++}
++
++// ── Fetch issues from Jira API ────────────────────────────────────
++async function syncJiraIssues() {
++  if (!_jiraConfig.baseUrl || !_jiraConfig.apiToken) {
++    pushNotif('Jira not configured','Click Jira Sync to set up credentials','⚙','info');
++    return;
++  }
++
++  const btn = q('jiraSyncBtn');
++  if (btn) { btn.disabled=true; btn.textContent='⏳ Syncing…'; }
++
++  const panel = q('jiraPanel');
++  if (panel) panel.classList.remove('hidden');
++
++  const keyEl = q('jiraProjectKey');
++  if (keyEl) keyEl.textContent = _jiraConfig.projectKey || '';
++
++  const creds  = btoa(`${_jiraConfig.email}:${_jiraConfig.apiToken}`);
++  const jql    = _jiraConfig.jql
++    ? encodeURIComponent(_jiraConfig.jql)
++    : encodeURIComponent(`project = ${_jiraConfig.projectKey} ORDER BY updated DESC`);
++  const url    = `${_jiraConfig.baseUrl}/rest/api/3/search?jql=${jql}&maxResults=${_jiraConfig.maxResults}&fields=summary,status,assignee,priority,issuetype,duedate,description,subtasks,parent,comment,created,updated`;
++
++  try {
++    const r = await fetch(url, {
++      headers: { 'Authorization': `Basic ${creds}`, 'Accept': 'application/json' }
++    });
++
++    if (!r.ok) {
++      throw new Error(`Jira API error: ${r.status} ${r.statusText}`);
++    }
++
++    const data   = await r.json();
++    _jiraIssues  = data.issues || [];
++    _jiraFiltered = [..._jiraIssues];
++
++    renderJiraIssues();
++
++    // Import as CRM tasks if configured
++    if (_jiraConfig.importAsTasks) importJiraAsTasks();
++
++    pushNotif(
++      `Jira synced: ${_jiraIssues.length} issues`,
++      `Project: ${_jiraConfig.projectKey}`,
++      '✅', 'success'
++    );
++    writeAudit('CREATE','jira',`Synced ${_jiraIssues.length} issues from Jira project ${_jiraConfig.projectKey}`);
++
++  } catch(e) {
++    q('jiraIssueList').innerHTML = `
++      <div class="jira-empty">
++        <div style="font-size:1.5rem;margin-bottom:.5rem">❌</div>
++        <div style="font-weight:600">Sync failed</div>
++        <div style="font-size:.78rem;color:var(--text-3);margin-top:.3rem">${e.message}</div>
++        <div style="font-size:.75rem;color:var(--text-3);margin-top:.5rem">
++          Note: Jira Cloud blocks cross-origin requests from browsers.<br>
++          <strong>Solution:</strong> Use the API proxy below or configure CORS.
++        </div>
++      </div>`;
++    pushNotif('Jira sync failed', e.message, '❌','warning');
++  } finally {
++    if (btn) { btn.disabled=false; btn.textContent='🔄 Refresh'; }
++  }
++}
++
++// ── Render issue list ──────────────────────────────────────────────
++function renderJiraIssues() {
++  const listEl = q('jiraIssueList');
++  const statsEl = q('jiraStats');
++  if (!listEl) return;
++
++  if (!_jiraFiltered.length) {
++    listEl.innerHTML = '<div class="jira-empty">No issues match the current filter.</div>';
++    if (statsEl) statsEl.innerHTML = '';
++    return;
++  }
++
++  // Stats
++  const byStatus = {};
++  _jiraIssues.forEach(i => {
++    const s = i.fields?.status?.name || 'Unknown';
++    byStatus[s] = (byStatus[s]||0) + 1;
++  });
++  if (statsEl) {
++    statsEl.innerHTML = Object.entries(byStatus)
++      .map(([s,c])=>`<span class="jira-stat"><span class="jira-status-chip ${jiraStatusClass(s)}">${s}</span> <strong>${c}</strong></span>`)
++      .join('') + `<span class="jira-stat" style="margin-left:auto">Total: <strong>${_jiraIssues.length}</strong></span>`;
++  }
++
++  // Header
++  const header = `<div class="jira-issue-row jira-issue-head">
++    <div></div><div>Key</div><div>Summary</div>
++    <div>Status</div><div>Assignee</div><div>Priority</div><div>Due</div><div>Action</div>
++  </div>`;
++
++  const rows = _jiraFiltered.map(issue => {
++    const f         = issue.fields || {};
++    const status    = f.status?.name || '—';
++    const assignee  = f.assignee?.displayName || 'Unassigned';
++    const assigneeI = (f.assignee?.displayName||'?').charAt(0).toUpperCase();
++    const priority  = f.priority?.name || 'Medium';
++    const type      = f.issuetype?.name || 'Task';
++    const due       = f.duedate ? fmtDate(f.duedate) : '—';
++    const isOverdue = f.duedate && new Date(f.duedate) < new Date() && status !== 'Done';
++    const isLinked  = state.tasks.some(t=>t.jiraKey===issue.key);
++    const color     = avatarColor(assignee);
++
++    return `<div class="jira-issue-row" onclick="openJiraIssue('${issue.key}')">
++      <div class="jira-type-icon" title="${esc(type)}">${JIRA_TYPE_ICONS[type]||'📋'}</div>
++      <a class="jira-issue-key" href="${_jiraConfig.baseUrl}/browse/${issue.key}"
++         target="_blank" onclick="event.stopPropagation()">${issue.key}</a>
++      <div class="jira-issue-summary" title="${esc(f.summary||'')}">${esc(f.summary||'—')}</div>
++      <div><span class="jira-status-chip ${jiraStatusClass(status)}">${esc(status)}</span></div>
++      <div class="jira-assignee">
++        <div class="jira-assignee-avatar" style="background:${color}">${assigneeI}</div>
++        <span>${esc(assignee.split(' ')[0])}</span>
++      </div>
++      <div class="jira-priority ${`jira-prio-${priority.toLowerCase()}`}">
++        ${JIRA_PRIO_ICONS[priority]||'▶'} ${esc(priority)}
++      </div>
++      <div style="font-size:.75rem;font-family:var(--mono);color:${isOverdue?'var(--rose)':'var(--text-2)'}">${due}</div>
++      <div onclick="event.stopPropagation()">
++        ${isLinked
++          ? `<span class="jira-linked-badge">✓ In CRM</span>`
++          : `<button class="jira-row-btn" onclick="importSingleJiraIssue('${issue.key}')">+ Task</button>`}
++      </div>
++    </div>`;
++  }).join('');
++
++  listEl.innerHTML = header + rows;
++}
++
++// ── Filter issues ──────────────────────────────────────────────────
++function filterJiraIssues() {
++  const search = (q('jiraSearchInput')?.value||'').toLowerCase();
++  const status = q('jiraStatusFilter')?.value||'';
++  const type   = q('jiraTypeFilter')?.value||'';
++
++  _jiraFiltered = _jiraIssues.filter(i=>{
++    const f = i.fields||{};
++    if (search && !i.key.toLowerCase().includes(search) &&
++        !(f.summary||'').toLowerCase().includes(search) &&
++        !(f.assignee?.displayName||'').toLowerCase().includes(search)) return false;
++    if (status && f.status?.name !== status) return false;
++    if (type   && f.issuetype?.name !== type) return false;
++    return true;
++  });
++  renderJiraIssues();
++}
++
++// ── Open issue detail ──────────────────────────────────────────────
++function openJiraIssue(key) {
++  const issue = _jiraIssues.find(i=>i.key===key);
++  if (!issue) return;
++  _jiraViewingIssueKey = key;
++  const f = issue.fields || {};
++  const isLinked = state.tasks.some(t=>t.jiraKey===key);
++
++  q('jiraIssueModalTitle').innerHTML = `
++    <span style="font-size:.85rem;font-family:var(--mono);color:#0052cc">${key}</span>
++    &nbsp; ${esc(f.issuetype?.name||'Issue')}`;
++
++  // Build description from Atlassian Document Format
++  let desc = '—';
++  if (f.description?.content) {
++    desc = f.description.content
++      .flatMap(b => b.content || [])
++      .filter(n => n.type==='text')
++      .map(n => n.text || '')
++      .join(' ')
++      .slice(0, 500) || '—';
++  }
++
++  const subtasks = f.subtasks||[];
++  const comments = f.comment?.comments||[];
++
++  q('jiraIssueModalBody').innerHTML = `
++    <div style="font-weight:700;font-size:1rem;margin-bottom:.75rem;color:var(--text)">${esc(f.summary||'—')}</div>
++
++    <div class="jira-detail-grid">
++      <div class="jira-detail-item">
++        <div class="jira-detail-key">Status</div>
++        <div class="jira-detail-val"><span class="jira-status-chip ${jiraStatusClass(f.status?.name||'')}">${esc(f.status?.name||'—')}</span></div>
++      </div>
++      <div class="jira-detail-item">
++        <div class="jira-detail-key">Type</div>
++        <div class="jira-detail-val">${JIRA_TYPE_ICONS[f.issuetype?.name]||'📋'} ${esc(f.issuetype?.name||'—')}</div>
++      </div>
++      <div class="jira-detail-item">
++        <div class="jira-detail-key">Priority</div>
++        <div class="jira-detail-val">${JIRA_PRIO_ICONS[f.priority?.name]||''} ${esc(f.priority?.name||'—')}</div>
++      </div>
++      <div class="jira-detail-item">
++        <div class="jira-detail-key">Assignee</div>
++        <div class="jira-detail-val">${esc(f.assignee?.displayName||'Unassigned')}</div>
++      </div>
++      <div class="jira-detail-item">
++        <div class="jira-detail-key">Due Date</div>
++        <div class="jira-detail-val">${f.duedate ? fmtDate(f.duedate) : '—'}</div>
++      </div>
++      <div class="jira-detail-item">
++        <div class="jira-detail-key">Created</div>
++        <div class="jira-detail-val">${f.created ? timeAgo(f.created) : '—'}</div>
++      </div>
++      <div class="jira-detail-item">
++        <div class="jira-detail-key">Updated</div>
++        <div class="jira-detail-val">${f.updated ? timeAgo(f.updated) : '—'}</div>
++      </div>
++      <div class="jira-detail-item">
++        <div class="jira-detail-key">CRM Status</div>
++        <div class="jira-detail-val">${isLinked ? '<span class="jira-linked-badge">✓ Linked as CRM Task</span>' : '<span style="color:var(--text-3)">Not linked</span>'}</div>
++      </div>
++    </div>
++
++    ${desc !== '—' ? `<div class="jira-detail-key" style="margin-bottom:.3rem">Description</div><div class="jira-detail-desc">${esc(desc)}</div>` : ''}
++
++    ${subtasks.length ? `
++      <div class="c360-sub-title">Subtasks (${subtasks.length})</div>
++      ${subtasks.map(s=>`
++        <div class="c360-record-row">
++          <span class="jira-status-chip ${jiraStatusClass(s.fields?.status?.name||'')}" style="font-size:.65rem">${esc(s.fields?.status?.name||'?')}</span>
++          <a href="${_jiraConfig.baseUrl}/browse/${s.key}" target="_blank" class="jira-issue-key">${s.key}</a>
++          <span style="font-size:.8rem;flex:1">${esc(s.fields?.summary||'')}</span>
++        </div>`).join('')}` : ''}
++
++    ${comments.length ? `
++      <div class="c360-sub-title">Latest Comments (${Math.min(comments.length,3)} of ${comments.length})</div>
++      ${comments.slice(-3).reverse().map(c=>`
++        <div style="background:var(--bg);border-radius:7px;padding:.5rem .65rem;margin-bottom:.35rem;font-size:.78rem">
++          <div style="font-weight:600;color:var(--accent);margin-bottom:2px">${esc(c.author?.displayName||'?')} · <span style="color:var(--text-3);font-weight:400">${timeAgo(c.created)}</span></div>
++          ${esc((c.body?.content||[]).flatMap(b=>b.content||[]).filter(n=>n.type==='text').map(n=>n.text||'').join(' ').slice(0,200))}
++        </div>`).join('')}` : ''}`;
++
++  const importBtn = q('jiraImportTaskBtn');
++  if (importBtn) {
++    importBtn.textContent = isLinked ? '✓ Already in CRM' : '+ Add as CRM Task';
++    importBtn.disabled    = isLinked;
++  }
++  openModal('jiraIssueModal');
++}
++
++// ── Import single issue as CRM task ───────────────────────────────
++function importSingleJiraIssue(key) {
++  const issue = _jiraIssues.find(i=>i.key===key);
++  if (!issue) return;
++  _jiraViewingIssueKey = key;
++  importJiraIssueAsTask();
++}
++
++function importJiraIssueAsTask() {
++  const key   = _jiraViewingIssueKey;
++  const issue = _jiraIssues.find(i=>i.key===key);
++  if (!issue) return;
++
++  const f = issue.fields || {};
++  // Map Jira status → CRM status
++  const statusMap = {
++    'To Do':'To Do', 'Backlog':'To Do', 'Open':'To Do',
++    'In Progress':'In Progress', 'In Development':'In Progress',
++    'In Review':'In Progress', 'Code Review':'In Progress',
++    'Done':'Done', 'Closed':'Done', 'Resolved':'Done',
++    'Blocked':'Blocked',
++  };
++  const crmStatus = statusMap[f.status?.name] || 'To Do';
++  const prioMap   = { 'Highest':'High','High':'High','Medium':'Medium','Low':'Low','Lowest':'Low' };
++
++  const task = {
++    id:          crypto.randomUUID(),
++    title:       `[${key}] ${f.summary||'Untitled'}`,
++    status:      crmStatus,
++    assignee:    f.assignee?.displayName || '',
++    dueDate:     f.duedate || '',
++    priority:    prioMap[f.priority?.name] || 'Medium',
++    projectId:   _jiraConfig.crmProjectId || (state.projects[0]?.id||''),
++    jiraKey:     key,
++    jiraUrl:     `${_jiraConfig.baseUrl}/browse/${key}`,
++    jiraType:    f.issuetype?.name || 'Task',
++    jiraStatus:  f.status?.name || '',
++    created_at:  new Date().toISOString(),
++  };
++
++  state.tasks.push(task);
++  persistLocal();
++  renderTasks();
++  renderJiraIssues(); // update "In CRM" badge
++  closeModal('jiraIssueModal');
++  pushNotif(`Task added: ${key}`, f.summary?.slice(0,50)||'', '✅','success');
++  writeAudit('CREATE','tasks',`Imported Jira issue ${key} as CRM task`);
++}
++
++// ── Bulk import all issues as tasks ───────────────────────────────
++function importJiraAsTasks() {
++  let imported = 0;
++  _jiraIssues.forEach(issue => {
++    if (state.tasks.some(t=>t.jiraKey===issue.key)) return; // skip existing
++    const f = issue.fields || {};
++    const statusMap = {
++      'To Do':'To Do','Backlog':'To Do','Open':'To Do',
++      'In Progress':'In Progress','In Development':'In Progress',
++      'In Review':'In Progress','Done':'Done','Closed':'Done','Resolved':'Done','Blocked':'Blocked',
++    };
++    state.tasks.push({
++      id:         crypto.randomUUID(),
++      title:      `[${issue.key}] ${f.summary||'Untitled'}`,
++      status:     statusMap[f.status?.name] || 'To Do',
++      assignee:   f.assignee?.displayName || '',
++      dueDate:    f.duedate || '',
++      priority:   { Highest:'High',High:'High',Medium:'Medium',Low:'Low',Lowest:'Low' }[f.priority?.name] || 'Medium',
++      projectId:  _jiraConfig.crmProjectId || (state.projects[0]?.id||''),
++      jiraKey:    issue.key,
++      jiraUrl:    `${_jiraConfig.baseUrl}/browse/${issue.key}`,
++      jiraType:   f.issuetype?.name || 'Task',
++      jiraStatus: f.status?.name || '',
++      created_at: new Date().toISOString(),
++    });
++    imported++;
++  });
++  if (imported) {
++    persistLocal();
++    renderTasks();
++    pushNotif(`${imported} tasks imported from Jira`, `Project: ${_jiraConfig.projectKey}`, '📋','success');
++  }
++}
++
++// ── Show Jira panel on project tab open ───────────────────────────
++const _prevSwitchTab = switchTab;
++window.switchTab = function(id) {
++  _prevSwitchTab(id);
++  if (id === 'projects' && _jiraConfig.baseUrl && _jiraIssues.length) {
++    q('jiraPanel')?.classList.remove('hidden');
++    renderJiraIssues();
++  }
++};
++
++// ── Show Jira key on task render ───────────────────────────────────
++const _origRenderTasks = renderTasks;
++window.renderTasks = function() {
++  _origRenderTasks();
++  // Add Jira badges to tasks that have jiraKey
++  document.querySelectorAll('.task-item, li[data-task-id]').forEach(el => {
++    const taskId = el.dataset?.taskId || el.getAttribute('data-task-id');
++    if (!taskId) return;
++    const task = state.tasks.find(t=>t.id===taskId);
++    if (task?.jiraKey && !el.querySelector('.jira-task-badge')) {
++      const badge = document.createElement('a');
++      badge.className = 'jira-task-badge';
++      badge.href = task.jiraUrl || '#';
++      badge.target = '_blank';
++      badge.title = `Jira: ${task.jiraKey}`;
++      badge.innerHTML = `<img src="https://cdn.worldvectorlogo.com/logos/jira-1.svg" style="width:11px;height:11px;vertical-align:middle" onerror="this.style.display='none'"> ${task.jiraKey}`;
++      badge.style.cssText = 'font-size:.68rem;background:#0052cc;color:#fff;padding:1px 6px;border-radius:3px;text-decoration:none;margin-left:.35rem;font-family:var(--mono);font-weight:700';
++      badge.onclick = e => e.stopPropagation();
++      el.querySelector('.task-title, .record-name')?.appendChild(badge);
++    }
++  });
++};
++
++// ── Auto-load on page open if configured ──────────────────────────
++if (_jiraConfig.baseUrl && _jiraConfig.apiToken && _jiraConfig.autoSync) {
++  _jiraAutoSyncInterval = setInterval(syncJiraIssues, 15 * 60 * 1000);
++}
+diff --git a/index.html b/index.html
+index c2886cd..b24d74a 100644
+--- a/index.html
++++ b/index.html
+@@ -368,6 +368,10 @@
+           <button class="btn-primary-sm" onclick="openModal('projectModal')">+ New Project</button>
+           <button class="btn-secondary-sm" onclick="openModal('milestoneModal')">+ Milestone</button>
+           <button class="btn-secondary-sm" onclick="openModal('taskModal')">+ Task</button>
++          <button class="btn-secondary-sm jira-sync-btn" onclick="openModal('jiraConfigModal')">
++            <img src="https://cdn.worldvectorlogo.com/logos/jira-1.svg" style="width:14px;height:14px;vertical-align:middle;margin-right:4px" onerror="this.style.display='none'" />
++            Jira Sync
++          </button>
+           <button class="btn-ghost-sm" onclick="openModal('activityModal')">+ Log Activity</button>
+         </div>
+       </div>
+@@ -416,6 +420,34 @@
+         <div class="gantt-wrap" id="ganttWrap"></div>
+       </div>
+ 
++      <!-- Jira Integration Panel -->
++      <div id="jiraPanel" class="jira-panel hidden">
++        <div class="jira-panel-header">
++          <div class="jira-panel-title">
++            <img src="https://cdn.worldvectorlogo.com/logos/jira-1.svg" style="width:18px;height:18px;vertical-align:middle" onerror="this.style.display='none'" />
++            Jira Issues
++            <span id="jiraProjectKey" class="jira-project-key"></span>
++          </div>
++          <div class="jira-panel-actions">
++            <input id="jiraSearchInput" class="jira-search" placeholder="🔍 Search issues…" oninput="filterJiraIssues()" />
++            <select id="jiraStatusFilter" class="filter-select" onchange="filterJiraIssues()" style="font-size:.78rem">
++              <option value="">All Statuses</option>
++              <option>To Do</option><option>In Progress</option><option>In Review</option>
++              <option>Done</option><option>Blocked</option><option>Open</option><option>Closed</option>
++            </select>
++            <select id="jiraTypeFilter" class="filter-select" onchange="filterJiraIssues()" style="font-size:.78rem">
++              <option value="">All Types</option>
++              <option>Story</option><option>Task</option><option>Bug</option><option>Epic</option><option>Sub-task</option>
++            </select>
++            <button class="btn-secondary-sm" onclick="syncJiraIssues()" id="jiraSyncBtn">🔄 Refresh</button>
++          </div>
++        </div>
++        <div id="jiraIssueList" class="jira-issue-list">
++          <div class="jira-empty">No issues loaded. Click Jira Sync to connect.</div>
++        </div>
++        <div id="jiraStats" class="jira-stats"></div>
++      </div>
++
+       <!-- Tasks & Milestones Panel -->
+       <div class="section-divider">Tasks & Milestones</div>
+       <div class="two-col">
+@@ -1206,6 +1238,134 @@
+   </dialog>
+ 
+ 
++  <!-- Jira Configuration Modal -->
++  <dialog id="jiraConfigModal" class="modal-dialog modal-lg">
++    <div class="modal-header">
++      <h3>
++        <img src="https://cdn.worldvectorlogo.com/logos/jira-1.svg" style="width:20px;height:20px;vertical-align:middle;margin-right:6px" onerror="this.style.display='none'" />
++        Jira Integration
++      </h3>
++      <button class="modal-close" onclick="closeModal('jiraConfigModal')">✕</button>
++    </div>
++    <div class="modal-body">
++      <div class="jira-config-tabs">
++        <button class="jira-ctab active" onclick="switchJiraConfigTab('connect',this)">🔌 Connect</button>
++        <button class="jira-ctab" onclick="switchJiraConfigTab('import',this)">⬇ Import Issues</button>
++        <button class="jira-ctab" onclick="switchJiraConfigTab('mapping',this)">🔗 Field Mapping</button>
++      </div>
++
++      <!-- Connect Tab -->
++      <div id="jiraConfigTab-connect" class="jira-config-content">
++        <div class="jira-config-info">
++          Connect your Jira project to automatically sync issues as tasks in the CRM.
++          Issues are fetched via the Jira REST API using your credentials.
++        </div>
++        <label>Jira Base URL
++          <input id="jiraBaseUrl" placeholder="https://yourcompany.atlassian.net" />
++        </label>
++        <label>Project Key
++          <input id="jiraProjectKey" placeholder="e.g. NHAI, NH48, PROJ" style="text-transform:uppercase" />
++        </label>
++        <label>Email (Jira account)
++          <input id="jiraEmail" type="email" placeholder="you@nhai.gov.in" />
++        </label>
++        <label>API Token
++          <div style="display:flex;gap:.5rem;align-items:center">
++            <input id="jiraApiToken" type="password" placeholder="Paste your Jira API token" style="flex:1" />
++            <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank"
++               class="cca-btn" style="white-space:nowrap;text-decoration:none">Get Token ↗</a>
++          </div>
++          <div style="font-size:.73rem;color:var(--text-3);margin-top:.25rem">
++            Atlassian account → Security → API tokens → Create token
++          </div>
++        </label>
++        <label>Link to CRM Project
++          <select id="jiraCrmProject">
++            <option value="">— Select CRM Project —</option>
++          </select>
++        </label>
++        <div id="jiraConnectStatus" style="margin-top:.5rem;font-size:.82rem;min-height:1.2rem"></div>
++      </div>
++
++      <!-- Import Tab -->
++      <div id="jiraConfigTab-import" class="jira-config-content hidden">
++        <div class="jira-config-info">
++          Configure which Jira issues to import and how to filter them.
++        </div>
++        <label>JQL Filter (optional)
++          <input id="jiraJql" placeholder='status != Done AND assignee = currentUser()' />
++          <div style="font-size:.73rem;color:var(--text-3);margin-top:.25rem">
++            Leave blank to import all issues. Examples:<br>
++            <code>status = "In Progress"</code> &nbsp;|&nbsp;
++            <code>assignee = "user@nhai.gov.in"</code> &nbsp;|&nbsp;
++            <code>sprint in openSprints()</code>
++          </div>
++        </label>
++        <label>Max Issues to Import
++          <select id="jiraMaxResults">
++            <option value="50">50 issues</option>
++            <option value="100" selected>100 issues</option>
++            <option value="200">200 issues</option>
++            <option value="500">500 issues (slow)</option>
++          </select>
++        </label>
++        <label>
++          <input type="checkbox" id="jiraImportAsTasks" checked />
++          Also create matching CRM Tasks from Jira issues
++        </label>
++        <label>
++          <input type="checkbox" id="jiraAutoSync" />
++          Auto-refresh every 15 minutes
++        </label>
++      </div>
++
++      <!-- Mapping Tab -->
++      <div id="jiraConfigTab-mapping" class="jira-config-content hidden">
++        <div class="jira-config-info">
++          Map Jira issue fields to CRM task fields.
++        </div>
++        <table class="bulk-map-table" style="width:100%">
++          <thead><tr><th>Jira Field</th><th>Maps to CRM Field</th></tr></thead>
++          <tbody>
++            <tr><td>Summary</td><td>Task Title</td></tr>
++            <tr><td>Status</td><td>Task Status (mapped below)</td></tr>
++            <tr><td>Assignee</td><td>Task Assignee</td></tr>
++            <tr><td>Due Date</td><td>Task Due Date</td></tr>
++            <tr><td>Priority</td><td>Task Priority</td></tr>
++            <tr><td>Issue Type</td><td>Task Type label</td></tr>
++          </tbody>
++        </table>
++        <div style="margin-top:.75rem;font-size:.8rem;font-weight:600;color:var(--text-2)">Status Mapping</div>
++        <div class="jira-status-mapping">
++          <div class="jira-map-row"><span class="jira-status-chip jira-todo">To Do</span> → <select class="filter-select"><option>To Do</option></select></div>
++          <div class="jira-map-row"><span class="jira-status-chip jira-inprogress">In Progress</span> → <select class="filter-select"><option>In Progress</option></select></div>
++          <div class="jira-map-row"><span class="jira-status-chip jira-inreview">In Review</span> → <select class="filter-select"><option>In Progress</option></select></div>
++          <div class="jira-map-row"><span class="jira-status-chip jira-done">Done</span> → <select class="filter-select"><option>Done</option></select></div>
++          <div class="jira-map-row"><span class="jira-status-chip jira-blocked">Blocked</span> → <select class="filter-select"><option>Blocked</option></select></div>
++        </div>
++      </div>
++    </div>
++    <div class="modal-footer">
++      <button type="button" class="btn-modal-secondary" onclick="closeModal('jiraConfigModal')">Cancel</button>
++      <button type="button" class="btn-secondary-sm" onclick="testJiraConnection()">🔌 Test Connection</button>
++      <button type="button" class="btn-modal-primary" onclick="saveJiraConfig()">💾 Save & Sync</button>
++    </div>
++  </dialog>
++
++  <!-- Jira Issue Detail Modal -->
++  <dialog id="jiraIssueModal" class="modal-dialog modal-lg">
++    <div class="modal-header">
++      <h3 id="jiraIssueModalTitle">Issue Details</h3>
++      <button class="modal-close" onclick="closeModal('jiraIssueModal')">✕</button>
++    </div>
++    <div class="modal-body" id="jiraIssueModalBody"></div>
++    <div class="modal-footer">
++      <button type="button" class="btn-modal-secondary" onclick="closeModal('jiraIssueModal')">Close</button>
++      <button type="button" class="btn-modal-primary" id="jiraImportTaskBtn" onclick="importJiraIssueAsTask()">+ Add as CRM Task</button>
++    </div>
++  </dialog>
++
++
+   <!-- Bulk Upload Contacts Modal -->
+   <dialog id="bulkUploadModal" class="modal-dialog modal-lg" style="max-width:700px">
+     <div class="modal-header">
+diff --git a/styles.css b/styles.css
+index 8febe5a..31d7b4a 100644
+--- a/styles.css
++++ b/styles.css
+@@ -1975,3 +1975,167 @@ dialog::backdrop { background: rgba(15,23,42,.5); backdrop-filter: blur(2px); }
+   .admin-table-row.contacts-grid { grid-template-columns: 2.5rem 1fr auto; }
+   .admin-tabs { width: 100%; }
+ }
++
++/* ══════════════════════════════════════════════════════
++   JIRA INTEGRATION
++══════════════════════════════════════════════════════ */
++
++/* Sync button */
++.jira-sync-btn {
++  background: #0052cc !important;
++  color: #fff !important;
++  border-color: #0052cc !important;
++}
++.jira-sync-btn:hover { background: #0747a6 !important; border-color: #0747a6 !important; }
++
++/* Jira panel */
++.jira-panel {
++  background: var(--surface);
++  border: 1.5px solid #0052cc33;
++  border-radius: 14px;
++  margin-bottom: 1.25rem;
++  overflow: hidden;
++  box-shadow: var(--shadow);
++}
++.jira-panel-header {
++  display: flex; align-items: center; justify-content: space-between;
++  padding: .85rem 1.1rem;
++  background: linear-gradient(135deg, #0052cc0a, #2684ff0a);
++  border-bottom: 1px solid #0052cc22;
++  flex-wrap: wrap; gap: .5rem;
++}
++.jira-panel-title {
++  font-weight: 700; font-size: .92rem; color: var(--text);
++  display: flex; align-items: center; gap: .5rem;
++}
++.jira-project-key {
++  background: #0052cc; color: #fff;
++  padding: 2px 8px; border-radius: 4px;
++  font-size: .72rem; font-weight: 700; font-family: var(--mono);
++}
++.jira-panel-actions { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
++.jira-search {
++  border: 1px solid var(--border); border-radius: 7px;
++  padding: .35rem .65rem; font-size: .8rem; background: var(--surface);
++  width: 180px;
++}
++
++/* Issue list */
++.jira-issue-list { max-height: 420px; overflow-y: auto; }
++.jira-empty { padding: 2rem; text-align: center; color: var(--text-3); font-size: .85rem; }
++
++/* Issue row */
++.jira-issue-row {
++  display: grid;
++  grid-template-columns: 1.2rem 90px 1fr 120px 100px 90px 80px auto;
++  gap: .5rem; align-items: center;
++  padding: .55rem 1.1rem;
++  border-bottom: 1px solid var(--border);
++  font-size: .8rem; transition: background .12s; cursor: pointer;
++}
++.jira-issue-row:hover { background: #f0f7ff; }
++.jira-issue-row:last-child { border-bottom: none; }
++.jira-issue-head {
++  background: var(--bg); font-size: .7rem; font-weight: 700;
++  text-transform: uppercase; letter-spacing: .05em; color: var(--text-3);
++  cursor: default;
++}
++.jira-issue-head:hover { background: var(--bg); }
++
++/* Issue key */
++.jira-issue-key {
++  font-family: var(--mono); font-weight: 700; font-size: .75rem;
++  color: #0052cc; text-decoration: none; white-space: nowrap;
++}
++.jira-issue-key:hover { text-decoration: underline; }
++
++/* Issue type icon */
++.jira-type-icon { font-size: .9rem; }
++
++/* Summary */
++.jira-issue-summary { font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
++
++/* Status chips */
++.jira-status-chip {
++  padding: 2px 8px; border-radius: 20px;
++  font-size: .68rem; font-weight: 700; white-space: nowrap;
++  display: inline-block;
++}
++.jira-todo       { background: #dfe1e6; color: #42526e; }
++.jira-inprogress { background: #deebff; color: #0052cc; }
++.jira-inreview   { background: #e3fcef; color: #006644; }
++.jira-done       { background: #e3fcef; color: #006644; }
++.jira-blocked    { background: #ffebe6; color: #bf2600; }
++.jira-open       { background: #fffae6; color: #974f0c; }
++
++/* Priority */
++.jira-priority { display: flex; align-items: center; gap: .25rem; font-size: .75rem; }
++.jira-prio-highest { color: #bf2600; }
++.jira-prio-high    { color: #ff5630; }
++.jira-prio-medium  { color: #ff8b00; }
++.jira-prio-low     { color: #2684ff; }
++.jira-prio-lowest  { color: #2684ff; }
++
++/* Assignee */
++.jira-assignee {
++  display: flex; align-items: center; gap: .3rem;
++  font-size: .75rem; color: var(--text-2);
++}
++.jira-assignee-avatar {
++  width: 20px; height: 20px; border-radius: 50%;
++  display: flex; align-items: center; justify-content: center;
++  font-size: .6rem; font-weight: 700; color: #fff; flex-shrink: 0;
++}
++
++/* Action buttons */
++.jira-row-btn {
++  background: none; border: 1px solid var(--border);
++  border-radius: 5px; padding: 2px 6px; font-size: .7rem;
++  cursor: pointer; color: var(--text-2); transition: all .12s;
++  white-space: nowrap;
++}
++.jira-row-btn:hover { background: #eff6ff; border-color: #93c5fd; color: var(--accent); }
++
++/* Jira stats bar */
++.jira-stats {
++  display: flex; gap: .5rem; flex-wrap: wrap;
++  padding: .6rem 1.1rem;
++  background: var(--bg); border-top: 1px solid var(--border);
++  font-size: .75rem;
++}
++.jira-stat { color: var(--text-2); }
++.jira-stat strong { color: var(--text); }
++
++/* Config modal tabs */
++.jira-config-tabs { display: flex; gap: .3rem; margin-bottom: 1rem; }
++.jira-ctab {
++  background: var(--bg); border: 1px solid var(--border);
++  border-radius: 7px; padding: .4rem .85rem;
++  font-size: .8rem; font-weight: 600; cursor: pointer;
++  color: var(--text-2); transition: all .15s;
++}
++.jira-ctab.active { background: #0052cc; color: #fff; border-color: #0052cc; }
++.jira-config-content { animation: fadeIn .2s; }
++.jira-config-info {
++  background: #eff6ff; border: 1px solid #bfdbfe;
++  border-radius: 8px; padding: .65rem .85rem;
++  font-size: .8rem; color: #1e40af; margin-bottom: .85rem;
++}
++
++/* Status mapping */
++.jira-status-mapping { display: flex; flex-direction: column; gap: .4rem; margin-top: .4rem; }
++.jira-map-row { display: flex; align-items: center; gap: .5rem; font-size: .8rem; }
++
++/* Issue detail modal */
++.jira-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem .75rem; margin-bottom: 1rem; }
++.jira-detail-item { font-size: .82rem; }
++.jira-detail-key { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); margin-bottom: 2px; }
++.jira-detail-val { color: var(--text); font-weight: 500; }
++.jira-detail-desc { background: var(--bg); border-radius: 8px; padding: .65rem; font-size: .82rem; line-height: 1.6; color: var(--text-2); margin-bottom: .75rem; }
++
++/* Linked task badge */
++.jira-linked-badge {
++  display: inline-flex; align-items: center; gap: .3rem;
++  background: #dcfce7; color: #15803d;
++  padding: 3px 10px; border-radius: 20px; font-size: .73rem; font-weight: 600;
++}
+-- 
+2.43.0
+

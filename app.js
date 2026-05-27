@@ -233,6 +233,8 @@ const REPORT_CONFIG = {
     },
     filters: ['type'],
   },
+  userwise: { label:'User-wise', headers:[], row:()=>[], summary:()=>[], filters:[] },
+  complete:  { label:'Complete',   headers:[], row:()=>[], summary:()=>[], filters:[] },
   pipeline: {
     label: 'Pipeline',
     headers: ['Stage','Count','Total Value (₹)','Avg Value (₹)','% of Total'],
@@ -2395,6 +2397,8 @@ function getReportData() {
 }
 
 function renderReport() {
+  if (_currentReport === 'userwise') { renderUserwiseReport(); return; }
+  if (_currentReport === 'complete') { renderCompleteReport(); return; }
   const cfg  = REPORT_CONFIG[_currentReport];
   const data = getReportData();
 
@@ -6209,3 +6213,961 @@ function adminResetLocalStorage() {
   location.reload();
 }
 
+
+// ══════════════════════════════════════════════════════════════════
+//  JIRA INTEGRATION
+// ══════════════════════════════════════════════════════════════════
+
+let _jiraConfig  = JSON.parse(localStorage.getItem('crm_jira_config') || 'null') || {};
+let _jiraIssues  = [];
+let _jiraFiltered = [];
+let _jiraAutoSyncInterval = null;
+let _jiraViewingIssueKey = null;
+
+function _saveJiraConfig() {
+  localStorage.setItem('crm_jira_config', JSON.stringify(_jiraConfig));
+}
+
+const JIRA_TYPE_ICONS = {
+  'Story':'🟩','Task':'🟦','Bug':'🔴','Epic':'🟣',
+  'Sub-task':'🔷','Feature':'🟨','Technical Task':'⚙','Spike':'🔱',
+};
+const JIRA_PRIO_ICONS = { 'Highest':'🔺','High':'🔼','Medium':'▶','Low':'🔽','Lowest':'🔻' };
+const JIRA_STATUS_CLASS = {
+  'To Do':'jira-todo','Open':'jira-open','Backlog':'jira-todo',
+  'In Progress':'jira-inprogress','In Development':'jira-inprogress',
+  'In Review':'jira-inreview','Code Review':'jira-inreview',
+  'Done':'jira-done','Closed':'jira-done','Resolved':'jira-done',
+  'Blocked':'jira-blocked',
+};
+function jiraStatusClass(s) { return JIRA_STATUS_CLASS[s] || 'jira-todo'; }
+
+function switchJiraConfigTab(tab, btn) {
+  document.querySelectorAll('.jira-ctab').forEach(b=>b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  document.querySelectorAll('.jira-config-content').forEach(c=>c.classList.add('hidden'));
+  q(`jiraConfigTab-${tab}`)?.classList.remove('hidden');
+}
+
+function jiraProxyUrl(baseUrl, path) {
+  const isDev = location.hostname==='localhost'||location.hostname==='127.0.0.1';
+  return isDev ? baseUrl+path : '/api/jira-proxy'+path;
+}
+
+// Get Jira fetch headers — always include X-Jira-Host for proxy
+function jiraHeaders(email, token, baseUrl) {
+  const creds = btoa(email + ':' + token);
+  const host  = baseUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  return {
+    'Authorization': 'Basic ' + creds,
+    'Accept':        'application/json',
+    'X-Jira-Host':   host,
+  };
+}
+
+async function testJiraConnection() {
+  const statusEl = q('jiraConnectStatus');
+  let baseUrl = (q('jiraBaseUrl')?.value||'').trim().replace(/\/browse\/.*$/,'').replace(/\/$/,'');
+  const email = q('jiraEmail')?.value.trim();
+  const token = q('jiraApiToken')?.value.trim();
+  const key   = q('jiraProjectKey')?.value.trim().toUpperCase();
+  if (!baseUrl||!email||!token) {
+    if(statusEl) statusEl.innerHTML='<span style="color:var(--rose)">⚠ Fill in all fields first.</span>';
+    return;
+  }
+  if(statusEl) statusEl.innerHTML='⏳ Testing connection…';
+  try {
+    const r = await fetch(jiraProxyUrl(baseUrl,`/rest/api/3/project/${key}`),
+      { headers: jiraHeaders(email, token, baseUrl) });
+    if (r.ok) {
+      const d = await r.json();
+      if(statusEl) statusEl.innerHTML=`<span style="color:#16a34a">✅ Connected! Project: <strong>${d.name||key}</strong></span>`;
+    } else if (r.status===401) {
+      if(statusEl) statusEl.innerHTML='<span style="color:var(--rose)">❌ Invalid credentials.</span>';
+    } else if (r.status===404) {
+      if(statusEl) statusEl.innerHTML='<span style="color:var(--rose)">❌ Project not found. Check key.</span>';
+    } else {
+      if(statusEl) statusEl.innerHTML=`<span style="color:var(--rose)">❌ Error ${r.status}</span>`;
+    }
+  } catch(e) {
+    if(statusEl) statusEl.innerHTML=`<span style="color:var(--rose)">❌ ${e.message}<br><small>Jira Cloud blocks browser requests — add Nginx proxy or use browser extension.</small></span>`;
+  }
+}
+
+async function saveAndSyncJira() {
+  // Auto-clean base URL — strip /browse/... and trailing slashes
+  let rawUrl = q('jiraBaseUrl')?.value.trim() || '';
+  rawUrl = rawUrl.replace(/\/browse\/.*$/, '').replace(/\/$/, '');
+  _jiraConfig = {
+    baseUrl:      rawUrl,
+    projectKey:   q('jiraProjectKey')?.value.trim().toUpperCase(),
+    email:        q('jiraEmail')?.value.trim(),
+    apiToken:     q('jiraApiToken')?.value.trim(),
+    jql:          q('jiraJql')?.value.trim(),
+    maxResults:   q('jiraMaxResults')?.value||'100',
+    importAsTasks:q('jiraImportAsTasks')?.checked??true,
+    autoSync:     q('jiraAutoSync')?.checked??false,
+    crmProjectId: q('jiraCrmProject')?.value||'',
+  };
+  _saveJiraConfig();
+  closeModal('jiraConfigModal');
+  if (!_jiraConfig.baseUrl||!_jiraConfig.apiToken) {
+    pushNotif('Jira config saved','Add credentials to start syncing','⚙','info');
+    return;
+  }
+  await syncJiraIssues();
+  if (_jiraConfig.autoSync) {
+    clearInterval(_jiraAutoSyncInterval);
+    _jiraAutoSyncInterval = setInterval(syncJiraIssues, 15*60*1000);
+  }
+}
+
+async function syncJiraIssues() {
+  if (!_jiraConfig.baseUrl||!_jiraConfig.apiToken) {
+    pushNotif('Jira not configured','Click Jira Sync to set up','⚙','info'); return;
+  }
+  const btn = q('jiraSyncBtn');
+  if (btn) { btn.disabled=true; btn.textContent='⏳ Syncing…'; }
+  q('jiraPanel')?.classList.remove('hidden');
+  const keyEl = q('jiraProjectKey2');
+  if (keyEl) keyEl.textContent = _jiraConfig.projectKey||'';
+  const jql   = encodeURIComponent(_jiraConfig.jql||`project = ${_jiraConfig.projectKey} ORDER BY updated DESC`);
+  const url = jiraProxyUrl(_jiraConfig.baseUrl,`/rest/api/3/search/jql?jql=${jql}&maxResults=${_jiraConfig.maxResults}&fields=summary,status,assignee,priority,issuetype,duedate,description,subtasks,comment,created,updated`);
+  try {
+    const r = await fetch(url, { headers: jiraHeaders(_jiraConfig.email, _jiraConfig.apiToken, _jiraConfig.baseUrl) });
+    if (!r.ok) throw new Error(`Jira API ${r.status}: ${r.statusText}`);
+    const data = await r.json();
+    _jiraIssues   = data.issues||[];
+    _jiraFiltered = [..._jiraIssues];
+    renderJiraIssues();
+    if (_jiraConfig.importAsTasks) importAllJiraAsTasks();
+    pushNotif(`Jira synced: ${_jiraIssues.length} issues`,`Project: ${_jiraConfig.projectKey}`,'✅','success');
+  } catch(e) {
+    q('jiraIssueList').innerHTML = `<div class="jira-empty">❌ Sync failed: ${e.message}<br><small>If using Jira Cloud, add a Nginx proxy to bypass CORS.</small></div>`;
+    pushNotif('Jira sync failed',e.message,'❌','warning');
+  } finally {
+    if (btn) { btn.disabled=false; btn.textContent='🔄 Refresh'; }
+  }
+}
+
+function renderJiraIssues() {
+  const listEl  = q('jiraIssueList');
+  const statsEl = q('jiraStats');
+  if (!listEl) return;
+  if (!_jiraFiltered.length) {
+    listEl.innerHTML='<div class="jira-empty">No issues match the filter.</div>';
+    if(statsEl) statsEl.innerHTML=''; return;
+  }
+  const byStatus={};
+  _jiraIssues.forEach(i=>{ const s=i.fields?.status?.name||'?'; byStatus[s]=(byStatus[s]||0)+1; });
+  if (statsEl) statsEl.innerHTML = Object.entries(byStatus)
+    .map(([s,c])=>`<span class="jira-stat"><span class="jira-status-chip ${jiraStatusClass(s)}">${s}</span> <strong>${c}</strong></span>`).join('')
+    +`<span class="jira-stat" style="margin-left:auto">Total: <strong>${_jiraIssues.length}</strong></span>`;
+
+  const header=`<div class="jira-issue-row jira-issue-head">
+    <div></div><div>Key</div><div>Summary</div><div>Status</div><div>Assignee</div><div>Priority</div><div>Due</div><div>Action</div></div>`;
+  listEl.innerHTML = header + _jiraFiltered.map(issue=>{
+    const f=issue.fields||{};
+    const status=f.status?.name||'—';
+    const assignee=f.assignee?.displayName||'Unassigned';
+    const priority=f.priority?.name||'Medium';
+    const type=f.issuetype?.name||'Task';
+    const due=f.duedate?fmtDate(f.duedate):'—';
+    const overdue=f.duedate&&new Date(f.duedate)<new Date()&&status!=='Done';
+    const linked=state.tasks.some(t=>t.jiraKey===issue.key);
+    const color=avatarColor(assignee);
+    return `<div class="jira-issue-row" onclick="openJiraIssue('${issue.key}')">
+      <div title="${esc(type)}">${JIRA_TYPE_ICONS[type]||'📋'}</div>
+      <a class="jira-issue-key" href="${_jiraConfig.baseUrl}/browse/${issue.key}" target="_blank" onclick="event.stopPropagation()">${issue.key}</a>
+      <div class="jira-issue-summary" title="${esc(f.summary||'')}">${esc(f.summary||'—')}</div>
+      <div><span class="jira-status-chip ${jiraStatusClass(status)}">${esc(status)}</span></div>
+      <div class="jira-assignee">
+        <div class="jira-assignee-avatar" style="background:${color}">${assignee.charAt(0)}</div>
+        <span>${esc(assignee.split(' ')[0])}</span>
+      </div>
+      <div class="jira-priority">${JIRA_PRIO_ICONS[priority]||'▶'} ${esc(priority)}</div>
+      <div style="font-size:.75rem;font-family:var(--mono);color:${overdue?'var(--rose)':'var(--text-2)'}">${due}</div>
+      <div onclick="event.stopPropagation()">
+        ${linked?`<span class="jira-linked-badge">✓ In CRM</span>`
+                :`<button class="jira-row-btn" onclick="importSingleJiraIssue('${issue.key}')">+ Task</button>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function filterJiraIssues() {
+  const search=( q('jiraSearchInput')?.value||'').toLowerCase();
+  const status=q('jiraStatusFilter')?.value||'';
+  const type=q('jiraTypeFilter')?.value||'';
+  _jiraFiltered=_jiraIssues.filter(i=>{
+    const f=i.fields||{};
+    if(search&&!i.key.toLowerCase().includes(search)&&!(f.summary||'').toLowerCase().includes(search)&&!(f.assignee?.displayName||'').toLowerCase().includes(search)) return false;
+    if(status&&f.status?.name!==status) return false;
+    if(type&&f.issuetype?.name!==type) return false;
+    return true;
+  });
+  renderJiraIssues();
+}
+
+function openJiraIssue(key) {
+  const issue=_jiraIssues.find(i=>i.key===key); if(!issue) return;
+  _jiraViewingIssueKey=key;
+  const f=issue.fields||{};
+  const linked=state.tasks.some(t=>t.jiraKey===key);
+  let desc='—';
+  if(f.description?.content) {
+    desc=f.description.content.flatMap(b=>b.content||[]).filter(n=>n.type==='text').map(n=>n.text||'').join(' ').slice(0,500)||'—';
+  }
+  const subtasks=f.subtasks||[];
+  const comments=f.comment?.comments||[];
+  q('jiraIssueModalTitle').innerHTML=`<span style="font-family:var(--mono);color:#0052cc">${key}</span> ${esc(f.issuetype?.name||'Issue')}`;
+  q('jiraIssueModalBody').innerHTML=`
+    <div style="font-weight:700;font-size:1rem;margin-bottom:.75rem">${esc(f.summary||'—')}</div>
+    <div class="jira-detail-grid">
+      <div class="jira-detail-item"><div class="jira-detail-key">Status</div><div class="jira-detail-val"><span class="jira-status-chip ${jiraStatusClass(f.status?.name||'')}">${esc(f.status?.name||'—')}</span></div></div>
+      <div class="jira-detail-item"><div class="jira-detail-key">Type</div><div class="jira-detail-val">${JIRA_TYPE_ICONS[f.issuetype?.name]||'📋'} ${esc(f.issuetype?.name||'—')}</div></div>
+      <div class="jira-detail-item"><div class="jira-detail-key">Priority</div><div class="jira-detail-val">${JIRA_PRIO_ICONS[f.priority?.name]||''} ${esc(f.priority?.name||'—')}</div></div>
+      <div class="jira-detail-item"><div class="jira-detail-key">Assignee</div><div class="jira-detail-val">${esc(f.assignee?.displayName||'Unassigned')}</div></div>
+      <div class="jira-detail-item"><div class="jira-detail-key">Due Date</div><div class="jira-detail-val">${f.duedate?fmtDate(f.duedate):'—'}</div></div>
+      <div class="jira-detail-item"><div class="jira-detail-key">Updated</div><div class="jira-detail-val">${f.updated?timeAgo(f.updated):'—'}</div></div>
+      <div class="jira-detail-item"><div class="jira-detail-key">CRM Status</div><div class="jira-detail-val">${linked?'<span class="jira-linked-badge">✓ Linked</span>':'<span style="color:var(--text-3)">Not linked</span>'}</div></div>
+    </div>
+    ${desc!=='—'?`<div class="jira-detail-key" style="margin-bottom:.3rem">Description</div><div class="jira-detail-desc">${esc(desc)}</div>`:''}
+    ${subtasks.length?`<div class="c360-sub-title">Subtasks (${subtasks.length})</div>${subtasks.map(s=>`<div class="c360-record-row"><span class="jira-status-chip ${jiraStatusClass(s.fields?.status?.name||'')}" style="font-size:.65rem">${esc(s.fields?.status?.name||'?')}</span><a href="${_jiraConfig.baseUrl}/browse/${s.key}" target="_blank" class="jira-issue-key">${s.key}</a><span style="font-size:.8rem;flex:1">${esc(s.fields?.summary||'')}</span></div>`).join('')}`:''}
+    ${comments.length?`<div class="c360-sub-title">Comments (${comments.length})</div>${comments.slice(-3).reverse().map(c=>`<div style="background:var(--bg);border-radius:7px;padding:.5rem .65rem;margin-bottom:.35rem;font-size:.78rem"><div style="font-weight:600;color:var(--accent);margin-bottom:2px">${esc(c.author?.displayName||'?')} · <span style="color:var(--text-3);font-weight:400">${timeAgo(c.created)}</span></div>${esc((c.body?.content||[]).flatMap(b=>b.content||[]).filter(n=>n.type==='text').map(n=>n.text||'').join(' ').slice(0,200))}</div>`).join('')}`:''}`;
+  const btn=q('jiraImportTaskBtn');
+  if(btn){btn.textContent=linked?'✓ Already in CRM':'+ Add as CRM Task';btn.disabled=linked;}
+  openModal('jiraIssueModal');
+}
+
+function importSingleJiraIssue(key) { const issue=_jiraIssues.find(i=>i.key===key); if(!issue) return; _jiraViewingIssueKey=key; importJiraIssueAsTask(); }
+
+function importJiraIssueAsTask() {
+  const key=_jiraViewingIssueKey;
+  const issue=_jiraIssues.find(i=>i.key===key); if(!issue) return;
+  const f=issue.fields||{};
+  const statusMap={'To Do':'To Do','Backlog':'To Do','Open':'To Do','In Progress':'In Progress','In Development':'In Progress','In Review':'In Progress','Done':'Done','Closed':'Done','Resolved':'Done','Blocked':'Blocked'};
+  const prioMap={'Highest':'High','High':'High','Medium':'Medium','Low':'Low','Lowest':'Low'};
+  const task={
+    id:crypto.randomUUID(),
+    title:`[${key}] ${f.summary||'Untitled'}`,
+    status:statusMap[f.status?.name]||'To Do',
+    assignee:f.assignee?.displayName||'',
+    dueDate:f.duedate||'',
+    priority:prioMap[f.priority?.name]||'Medium',
+    projectId:_jiraConfig.crmProjectId||(state.projects[0]?.id||''),
+    jiraKey:key,
+    jiraUrl:`${_jiraConfig.baseUrl}/browse/${key}`,
+    jiraType:f.issuetype?.name||'Task',
+    jiraStatus:f.status?.name||'',
+    created_at:new Date().toISOString(),
+  };
+  state.tasks.push(task);
+  persistLocal();
+  renderTasks();
+  renderJiraIssues();
+  closeModal('jiraIssueModal');
+  pushNotif(`Task added: ${key}`,f.summary?.slice(0,50)||'','✅','success');
+}
+
+function importAllJiraAsTasks() {
+  let n=0;
+  _jiraIssues.forEach(issue=>{
+    if(state.tasks.some(t=>t.jiraKey===issue.key)) return;
+    const f=issue.fields||{};
+    const statusMap={'To Do':'To Do','Backlog':'To Do','Open':'To Do','In Progress':'In Progress','In Development':'In Progress','In Review':'In Progress','Done':'Done','Closed':'Done','Resolved':'Done','Blocked':'Blocked'};
+    state.tasks.push({id:crypto.randomUUID(),title:`[${issue.key}] ${f.summary||'Untitled'}`,status:statusMap[f.status?.name]||'To Do',assignee:f.assignee?.displayName||'',dueDate:f.duedate||'',priority:{Highest:'High',High:'High',Medium:'Medium',Low:'Low',Lowest:'Low'}[f.priority?.name]||'Medium',projectId:_jiraConfig.crmProjectId||(state.projects[0]?.id||''),jiraKey:issue.key,jiraUrl:`${_jiraConfig.baseUrl}/browse/${issue.key}`,jiraType:f.issuetype?.name||'Task',jiraStatus:f.status?.name||'',created_at:new Date().toISOString()});
+    n++;
+  });
+  if(n){persistLocal();renderTasks();pushNotif(`${n} tasks imported`,`From Jira ${_jiraConfig.projectKey}`,'📋','success');}
+}
+
+if(_jiraConfig.autoSync&&_jiraConfig.baseUrl&&_jiraConfig.apiToken){
+  _jiraAutoSyncInterval=setInterval(syncJiraIssues,15*60*1000);
+}
+
+// ══ USER-WISE & COMPLETE REPORTS ══════════════════════════════════
+
+function getDateRange() {
+  const from = q('reportDateFrom')?.value;
+  const to   = q('reportDateTo')?.value;
+  return { from: from ? new Date(from) : null, to: to ? new Date(to + 'T23:59:59') : null };
+}
+function inDateRange(dateStr, range) {
+  if (!range.from && !range.to) return true;
+  const d = new Date(dateStr);
+  if (range.from && d < range.from) return false;
+  if (range.to   && d > range.to)   return false;
+  return true;
+}
+function toggleReportGrouping() {
+  _reportGrouped = !_reportGrouped;
+  const btn = q('reportGroupBtn');
+  if (btn) btn.textContent = _reportGrouped ? '⊟ Ungrouped' : '⊞ Group by User';
+  renderUserwiseReport();
+}
+function deriveUsersFromData() {
+  const ids = new Set([...state.contacts.map(c=>c.owner_user_id),...state.leads.map(l=>l.owner_user_id),...state.tickets.map(t=>t.owner_user_id)].filter(Boolean));
+  return [...ids].map(id=>({id,name:`User ${id.slice(0,6)}`,email:'',roles:['viewer']}));
+}
+
+function renderUserwiseReport() {
+  const range = getDateRange();
+  const userFilter = q('reportUserFilter')?.value||'';
+  const search = (q('reportSearch')?.value||'').toLowerCase();
+  const users = (window._adminUsers&&window._adminUsers.length) ? window._adminUsers : deriveUsersFromData();
+  const filteredUsers = users.filter(u=>!userFilter||u.id===userFilter);
+  const userStats = filteredUsers.map(u=>{
+    const myContacts=state.contacts.filter(c=>c.owner_user_id===u.id&&inDateRange(c.created_at||'',range));
+    const myLeads=state.leads.filter(l=>l.owner_user_id===u.id&&inDateRange(l.created_at||'',range));
+    const myTickets=state.tickets.filter(t=>t.owner_user_id===u.id&&inDateRange(t.created_at||'',range));
+    const myProjects=state.projects.filter(p=>p.manager===u.name&&inDateRange(p.created_at||'',range));
+    const wonLeads=myLeads.filter(l=>l.stage==='Won');
+    const wonValue=wonLeads.reduce((s,l)=>s+(l.value||0),0);
+    const resolvedTix=myTickets.filter(t=>t.status==='Resolved').length;
+    const perfScore=Math.min(100,Math.round(myContacts.length*2+wonLeads.length*10+resolvedTix*5+myProjects.filter(p=>p.status==='Completed').length*8));
+    return {u,myContacts,myLeads,myTickets,myProjects,wonLeads,wonValue,resolvedTix,perfScore};
+  }).filter(s=>!search||s.u.name.toLowerCase().includes(search)||s.u.email?.toLowerCase().includes(search));
+
+  const summaryEl=q('reportSummary');
+  if(summaryEl){
+    const tc=userStats.reduce((s,x)=>s+x.myContacts.length,0);
+    const tl=userStats.reduce((s,x)=>s+x.myLeads.length,0);
+    const tw=userStats.reduce((s,x)=>s+x.wonValue,0);
+    const tt=userStats.reduce((s,x)=>s+x.myTickets.length,0);
+    summaryEl.innerHTML=`<div class="report-kpi"><div class="report-kpi-val">${filteredUsers.length}</div><div class="report-kpi-label">Users</div></div><div class="report-kpi"><div class="report-kpi-val">${tc}</div><div class="report-kpi-label">Contacts Created</div></div><div class="report-kpi"><div class="report-kpi-val">${tl}</div><div class="report-kpi-label">Total Leads</div></div><div class="report-kpi"><div class="report-kpi-val">₹${fmtMoney(tw)}</div><div class="report-kpi-label">Revenue Won</div></div><div class="report-kpi"><div class="report-kpi-val">${tt}</div><div class="report-kpi-label">Tickets Handled</div></div>`;
+  }
+
+  const tableWrap=document.querySelector('.report-table-wrap');
+  const emptyEl=q('reportEmpty');
+  if(!userStats.length){if(tableWrap)tableWrap.innerHTML='';if(emptyEl)emptyEl.classList.remove('hidden');return;}
+  if(emptyEl)emptyEl.classList.add('hidden');
+
+  if(!_reportGrouped){
+    if(tableWrap)tableWrap.innerHTML=`<div class="userwise-grid">${userStats.map(s=>{
+      const role=s.u.roles?.[0]||'viewer';
+      const rd=(typeof ROLE_DEFINITIONS!=='undefined'&&ROLE_DEFINITIONS[role])||{label:role,icon:'👤',color:'#64748b',bg:'#f1f5f9'};
+      const color=avatarColor(s.u.name);
+      const pct=Math.min(100,s.perfScore);
+      const pc=pct>=70?'#16a34a':pct>=40?'#d97706':'#e11d48';
+      return `<div class="userwise-card">
+        <div class="userwise-card-header">
+          <div class="userwise-card-avatar" style="background:${color}">${s.u.name.charAt(0).toUpperCase()}</div>
+          <div><div class="userwise-card-name">${esc(s.u.name)}</div><div class="userwise-card-role">${rd.icon} ${rd.label} · ${esc(s.u.email||'')}</div></div>
+        </div>
+        <div class="userwise-stats">
+          <div class="userwise-stat"><div class="userwise-stat-val">${s.myContacts.length}</div><div class="userwise-stat-label">Contacts</div></div>
+          <div class="userwise-stat"><div class="userwise-stat-val">${s.myLeads.length}</div><div class="userwise-stat-label">Leads</div></div>
+          <div class="userwise-stat"><div class="userwise-stat-val">${s.wonLeads.length}</div><div class="userwise-stat-label">Won</div></div>
+          <div class="userwise-stat"><div class="userwise-stat-val">${s.myTickets.length}</div><div class="userwise-stat-label">Tickets</div></div>
+          <div class="userwise-stat"><div class="userwise-stat-val">${s.myProjects.length}</div><div class="userwise-stat-label">Projects</div></div>
+          <div class="userwise-stat"><div class="userwise-stat-val" style="color:var(--accent)">₹${fmtMoney(s.wonValue)}</div><div class="userwise-stat-label">Revenue</div></div>
+        </div>
+        <div class="userwise-perf-bar">
+          <div class="userwise-perf-label"><span>Performance Score</span><span style="color:${pc};font-weight:700">${pct}</span></div>
+          <div class="userwise-perf-track"><div class="userwise-perf-fill" style="width:${pct}%;background:${pc}"></div></div>
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+  } else {
+    if(tableWrap)tableWrap.innerHTML=`<table class="data-table report-table"><thead><tr><th>User</th><th>Email</th><th>Role</th><th>Contacts</th><th>Leads</th><th>Won</th><th>Revenue ₹</th><th>Tickets</th><th>Resolved</th><th>Projects</th><th>Score</th></tr></thead><tbody>${userStats.map(s=>{
+      const role=s.u.roles?.[0]||'viewer';
+      const rd=(typeof ROLE_DEFINITIONS!=='undefined'&&ROLE_DEFINITIONS[role])||{label:role,icon:'👤'};
+      const pct=Math.min(100,s.perfScore);
+      const pc=pct>=70?'#16a34a':pct>=40?'#d97706':'#e11d48';
+      return `<tr><td><strong>${esc(s.u.name)}</strong></td><td>${esc(s.u.email||'')}</td><td>${rd.icon} ${rd.label}</td><td>${s.myContacts.length}</td><td>${s.myLeads.length}</td><td>${s.wonLeads.length}</td><td style="font-family:var(--mono)">₹${fmtMoney(s.wonValue)}</td><td>${s.myTickets.length}</td><td>${s.resolvedTix}</td><td>${s.myProjects.length}</td><td><span style="color:${pc};font-weight:700">${pct}</span></td></tr>`;
+    }).join('')}</tbody></table>`;
+  }
+}
+
+function renderCompleteReport(){
+  const range=getDateRange();
+  const search=(q('reportSearch')?.value||'').toLowerCase();
+  const contacts=state.contacts.filter(c=>inDateRange(c.created_at||'',range)&&(!search||c.name.toLowerCase().includes(search)||c.email.toLowerCase().includes(search)));
+  const leads=state.leads.filter(l=>inDateRange(l.created_at||'',range)&&(!search||l.title.toLowerCase().includes(search)));
+  const tickets=state.tickets.filter(t=>inDateRange(t.created_at||'',range)&&(!search||t.title.toLowerCase().includes(search)));
+  const projects=state.projects.filter(p=>inDateRange(p.created_at||'',range)&&(!search||p.name.toLowerCase().includes(search)));
+  const tasks=state.tasks.filter(t=>inDateRange(t.created_at||'',range)&&(!search||t.title?.toLowerCase().includes(search)));
+  const won=leads.filter(l=>l.stage==='Won');
+  const summaryEl=q('reportSummary');
+  if(summaryEl)summaryEl.innerHTML=`<div class="report-kpi"><div class="report-kpi-val">${contacts.length}</div><div class="report-kpi-label">Contacts</div></div><div class="report-kpi"><div class="report-kpi-val">${leads.length}</div><div class="report-kpi-label">Leads</div></div><div class="report-kpi"><div class="report-kpi-val">₹${fmtMoney(won.reduce((s,l)=>s+(l.value||0),0))}</div><div class="report-kpi-label">Revenue Won</div></div><div class="report-kpi"><div class="report-kpi-val">${tickets.length}</div><div class="report-kpi-label">Tickets</div></div><div class="report-kpi"><div class="report-kpi-val">${projects.length}</div><div class="report-kpi-label">Projects</div></div><div class="report-kpi"><div class="report-kpi-val">${tasks.length}</div><div class="report-kpi-label">Tasks</div></div>`;
+  const tw=document.querySelector('.report-table-wrap');
+  if(!tw)return;
+  const sec=(title,count,rows)=>`<div class="complete-report-section"><div class="complete-report-title">${title}<span class="complete-report-count">${count}</span></div>${rows.length?`<table class="data-table report-table">${rows}</table>`:'<div style="color:var(--text-3);font-size:.82rem;padding:.5rem 0">No records.</div>'}</div>`;
+  tw.innerHTML=`<div style="padding:.25rem 0">
+    ${sec('👥 Contacts',contacts.length,`<thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Company</th><th>Location</th><th>Created</th></tr></thead><tbody>${contacts.slice(0,200).map(c=>`<tr><td><strong>${esc(c.name)}</strong></td><td>${esc(c.email)}</td><td>${esc(c.phone||'—')}</td><td>${esc(c.company||'—')}</td><td>${esc(c.location||'—')}</td><td>${fmtDate(c.created_at)}</td></tr>`).join('')}</tbody>`)}
+    ${sec('🔥 Leads',leads.length,`<thead><tr><th>Title</th><th>Stage</th><th>Value ₹</th><th>Contact</th><th>Created</th></tr></thead><tbody>${leads.slice(0,200).map(l=>`<tr><td>${esc(l.title)}</td><td><span class="${badgeClass(l.stage)}">${l.stage}</span></td><td>₹${fmtMoney(l.value)}</td><td>${esc(state.contacts.find(c=>c.id===l.contact_id)?.name||'—')}</td><td>${fmtDate(l.created_at)}</td></tr>`).join('')}</tbody>`)}
+    ${sec('🎫 Tickets',tickets.length,`<thead><tr><th>Title</th><th>Status</th><th>Priority</th><th>Contact</th><th>Created</th></tr></thead><tbody>${tickets.slice(0,200).map(t=>`<tr><td>${esc(t.title)}</td><td><span class="${badgeClass(t.status)}">${t.status}</span></td><td><span class="${badgeClass(t.priority)}">${t.priority}</span></td><td>${esc(state.contacts.find(c=>c.id===t.contact_id)?.name||'—')}</td><td>${fmtDate(t.created_at)}</td></tr>`).join('')}</tbody>`)}
+    ${sec('📁 Projects',projects.length,`<thead><tr><th>Name</th><th>Status</th><th>Manager</th><th>Progress</th><th>Due Date</th></tr></thead><tbody>${projects.slice(0,100).map(p=>`<tr><td><strong>${esc(p.name)}</strong></td><td><span class="${badgeClass(p.status)}">${p.status}</span></td><td>${esc(p.manager||'—')}</td><td>${p.progress||0}%</td><td>${fmtDate(p.dueDate)}</td></tr>`).join('')}</tbody>`)}
+    ${sec('✅ Tasks',tasks.length,`<thead><tr><th>Title</th><th>Status</th><th>Assignee</th><th>Priority</th><th>Due Date</th><th>Jira</th></tr></thead><tbody>${tasks.slice(0,200).map(t=>`<tr><td>${esc(t.title)}</td><td><span class="${badgeClass(t.status)}">${t.status}</span></td><td>${esc(t.assignee||'—')}</td><td>${esc(t.priority||'—')}</td><td>${fmtDate(t.dueDate)}</td><td>${t.jiraKey?`<span style="font-size:.72rem;background:#0052cc;color:#fff;padding:1px 6px;border-radius:3px;font-family:var(--mono)">${t.jiraKey}</span>`:'—'}</td></tr>`).join('')}</tbody>`)}
+  </div>`;
+}
+
+const _prevExportCSVReport = typeof exportCurrentCSV === 'function' ? exportCurrentCSV : null;
+window.exportCurrentCSV = function() {
+  if(_currentReport==='userwise'){exportUserwiseCSV();return;}
+  if(_currentReport==='complete'){exportCompleteCSV();return;}
+  if(_prevExportCSVReport) _prevExportCSVReport();
+};
+
+function exportUserwiseCSV(){
+  const range=getDateRange();
+  const users=(window._adminUsers&&window._adminUsers.length)?window._adminUsers:deriveUsersFromData();
+  const rows=[['User','Email','Role','Contacts','Leads','Won Leads','Revenue (₹)','Tickets','Resolved','Projects','Perf. Score']];
+  users.forEach(u=>{
+    const mc=state.contacts.filter(c=>c.owner_user_id===u.id&&inDateRange(c.created_at||'',range));
+    const ml=state.leads.filter(l=>l.owner_user_id===u.id&&inDateRange(l.created_at||'',range));
+    const mt=state.tickets.filter(t=>t.owner_user_id===u.id&&inDateRange(t.created_at||'',range));
+    const mp=state.projects.filter(p=>p.manager===u.name&&inDateRange(p.created_at||'',range));
+    const won=ml.filter(l=>l.stage==='Won');
+    const res=mt.filter(t=>t.status==='Resolved').length;
+    const wv=won.reduce((s,l)=>s+(l.value||0),0);
+    const perf=Math.min(100,Math.round(mc.length*2+won.length*10+res*5+mp.filter(p=>p.status==='Completed').length*8));
+    rows.push([u.name,u.email||'',u.roles?.[0]||'viewer',mc.length,ml.length,won.length,wv,mt.length,res,mp.length,perf]);
+  });
+  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=`user-wise-report-${new Date().toISOString().slice(0,10)}.csv`;a.click();
+}
+
+function exportCompleteCSV(){
+  const range=getDateRange();
+  let csv='CONTACTS\nName,Email,Phone,Company,Location,Created\n';
+  csv+=state.contacts.filter(c=>inDateRange(c.created_at||'',range)).map(c=>[c.name,c.email,c.phone||'',c.company||'',c.location||'',fmtDate(c.created_at)].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  csv+='\n\nLEADS\nTitle,Stage,Value,Contact,Created\n';
+  csv+=state.leads.filter(l=>inDateRange(l.created_at||'',range)).map(l=>[l.title,l.stage,l.value||0,state.contacts.find(c=>c.id===l.contact_id)?.name||'',fmtDate(l.created_at)].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  csv+='\n\nTICKETS\nTitle,Status,Priority,Contact,Created\n';
+  csv+=state.tickets.filter(t=>inDateRange(t.created_at||'',range)).map(t=>[t.title,t.status,t.priority,state.contacts.find(c=>c.id===t.contact_id)?.name||'',fmtDate(t.created_at)].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  csv+='\n\nPROJECTS\nName,Status,Manager,Progress,Due Date\n';
+  csv+=state.projects.filter(p=>inDateRange(p.created_at||'',range)).map(p=>[p.name,p.status,p.manager||'',`${p.progress||0}%`,fmtDate(p.dueDate)].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  csv+='\n\nTASKS\nTitle,Status,Assignee,Priority,Due Date,Jira Key\n';
+  csv+=state.tasks.filter(t=>inDateRange(t.created_at||'',range)).map(t=>[t.title,t.status,t.assignee||'',t.priority||'',fmtDate(t.dueDate),t.jiraKey||''].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=`complete-report-${new Date().toISOString().slice(0,10)}.csv`;a.click();
+}
+
+function exportCurrentExcel(){
+  if(_currentReport==='userwise'){exportUserwiseCSV();return;}
+  if(_currentReport==='complete'){exportCompleteCSV();return;}
+  exportCurrentCSV();
+}
+
+let _reportGrouped = false;
+
+// ══════════════════════════════════════════════════════════════════
+//  JIRA REPORT (in Projects section)
+// ══════════════════════════════════════════════════════════════════
+
+let _jiraReportTab = 'userwise';
+
+function openJiraReport() {
+  if (!_jiraIssues || !_jiraIssues.length) {
+    if (_jiraConfig && _jiraConfig.baseUrl && _jiraConfig.apiToken) {
+      pushNotif('Loading Jira data…', 'Syncing issues first', '⏳', 'info');
+      syncJiraIssues().then(() => {
+        _populateJiraReportFilters();
+        renderJiraReport();
+        openModal('jiraReportModal');
+      });
+    } else {
+      pushNotif('Jira not configured', 'Click Jira Sync first to connect', '⚙', 'info');
+      openModal('jiraConfigModal');
+    }
+    return;
+  }
+  _populateJiraReportFilters();
+  renderJiraReport();
+  openModal('jiraReportModal');
+}
+
+function _populateJiraReportFilters() {
+  const assignees = [...new Set(_jiraIssues
+    .map(i => i.fields?.assignee?.displayName)
+    .filter(Boolean))].sort();
+  const sel = q('jiraRptAssigneeFilter');
+  if (sel) {
+    sel.innerHTML = '<option value="">All Assignees</option>' +
+      assignees.map(a => `<option>${a}</option>`).join('');
+  }
+}
+
+function switchJiraReportTab(tab, btn) {
+  _jiraReportTab = tab;
+  document.querySelectorAll('#jiraReportModal .jira-ctab')
+    .forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderJiraReport();
+}
+
+function _getFilteredJiraIssues() {
+  const search   = (q('jiraRptSearch')?.value || '').toLowerCase();
+  const assignee = q('jiraRptAssigneeFilter')?.value || '';
+  const status   = q('jiraRptStatusFilter')?.value || '';
+  return (_jiraIssues || []).filter(i => {
+    const f = i.fields || {};
+    if (assignee && f.assignee?.displayName !== assignee) return false;
+    if (status   && f.status?.name !== status)            return false;
+    if (search   && !i.key.toLowerCase().includes(search) &&
+        !(f.summary||'').toLowerCase().includes(search) &&
+        !(f.assignee?.displayName||'').toLowerCase().includes(search)) return false;
+    return true;
+  });
+}
+
+function renderJiraReport() {
+  const issues  = _getFilteredJiraIssues();
+  const content = q('jiraRptContent');
+  const summary = q('jiraRptSummary');
+  if (!content) return;
+
+  // ── Summary bar ────────────────────────────────────────────────
+  const total    = issues.length;
+  const done     = issues.filter(i => ['Done','Closed','Resolved'].includes(i.fields?.status?.name)).length;
+  const inProg   = issues.filter(i => ['In Progress','In Development','In Review','Development done'].includes(i.fields?.status?.name)).length;
+  const todo     = issues.filter(i => ['To Do','Backlog','Open'].includes(i.fields?.status?.name)).length;
+  const blocked  = issues.filter(i => i.fields?.status?.name === 'Blocked').length;
+  const noAssign = issues.filter(i => !i.fields?.assignee).length;
+
+  if (summary) summary.innerHTML = `
+    <div class="report-kpi"><div class="report-kpi-val">${total}</div><div class="report-kpi-label">Total Issues</div></div>
+    <div class="report-kpi"><div class="report-kpi-val" style="color:#16a34a">${done}</div><div class="report-kpi-label">Done</div></div>
+    <div class="report-kpi"><div class="report-kpi-val" style="color:#2563eb">${inProg}</div><div class="report-kpi-label">In Progress</div></div>
+    <div class="report-kpi"><div class="report-kpi-val" style="color:#d97706">${todo}</div><div class="report-kpi-label">To Do</div></div>
+    ${blocked  ? `<div class="report-kpi"><div class="report-kpi-val" style="color:#e11d48">${blocked}</div><div class="report-kpi-label">Blocked</div></div>` : ''}
+    ${noAssign ? `<div class="report-kpi"><div class="report-kpi-val" style="color:var(--text-3)">${noAssign}</div><div class="report-kpi-label">Unassigned</div></div>` : ''}
+    <div class="report-kpi"><div class="report-kpi-val" style="color:#16a34a">${total ? Math.round(done/total*100) : 0}%</div><div class="report-kpi-label">Completion</div></div>`;
+
+  if (_jiraReportTab === 'userwise')  _renderJiraUserwise(issues, content);
+  if (_jiraReportTab === 'complete')  _renderJiraComplete(issues, content);
+  if (_jiraReportTab === 'status')    _renderJiraByStatus(issues, content);
+  if (_jiraReportTab === 'type')      _renderJiraByType(issues, content);
+}
+
+// ── User-wise tab ─────────────────────────────────────────────────
+function _renderJiraUserwise(issues, el) {
+  // Group by assignee
+  const byUser = {};
+  issues.forEach(i => {
+    const name = i.fields?.assignee?.displayName || '⚠ Unassigned';
+    if (!byUser[name]) byUser[name] = [];
+    byUser[name].push(i);
+  });
+
+  const sorted = Object.entries(byUser)
+    .sort((a, b) => b[1].length - a[1].length);
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:.75rem;margin-bottom:1rem">
+      ${sorted.map(([name, iss]) => {
+        const done    = iss.filter(i => ['Done','Closed','Resolved'].includes(i.fields?.status?.name)).length;
+        const inProg  = iss.filter(i => ['In Progress','In Development','In Review','Development done'].includes(i.fields?.status?.name)).length;
+        const todo    = iss.filter(i => ['To Do','Backlog','Open'].includes(i.fields?.status?.name)).length;
+        const blocked = iss.filter(i => i.fields?.status?.name === 'Blocked').length;
+        const pct     = iss.length ? Math.round(done / iss.length * 100) : 0;
+        const pColor  = pct >= 70 ? '#16a34a' : pct >= 40 ? '#d97706' : '#e11d48';
+        const color   = name === '⚠ Unassigned' ? '#94a3b8' : avatarColor(name);
+        const bugs    = iss.filter(i => i.fields?.issuetype?.name === 'Bug').length;
+        const highs   = iss.filter(i => ['Highest','High'].includes(i.fields?.priority?.name)).length;
+        return `
+          <div class="userwise-card">
+            <div class="userwise-card-header">
+              <div class="userwise-card-avatar" style="background:${color}">${name.charAt(0).toUpperCase()}</div>
+              <div style="min-width:0">
+                <div class="userwise-card-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(name)}</div>
+                <div class="userwise-card-role">${iss.length} issues · ${pct}% complete</div>
+              </div>
+            </div>
+            <div class="userwise-stats">
+              <div class="userwise-stat"><div class="userwise-stat-val">${todo}</div><div class="userwise-stat-label">To Do</div></div>
+              <div class="userwise-stat"><div class="userwise-stat-val" style="color:#2563eb">${inProg}</div><div class="userwise-stat-label">In Progress</div></div>
+              <div class="userwise-stat"><div class="userwise-stat-val" style="color:#16a34a">${done}</div><div class="userwise-stat-label">Done</div></div>
+              <div class="userwise-stat"><div class="userwise-stat-val" style="color:#e11d48">${blocked}</div><div class="userwise-stat-label">Blocked</div></div>
+              <div class="userwise-stat"><div class="userwise-stat-val" style="color:#e11d48">${bugs}</div><div class="userwise-stat-label">Bugs</div></div>
+              <div class="userwise-stat"><div class="userwise-stat-val" style="color:#d97706">${highs}</div><div class="userwise-stat-label">High Prio</div></div>
+            </div>
+            <div class="userwise-perf-bar">
+              <div class="userwise-perf-label">
+                <span>Completion</span>
+                <span style="color:${pColor};font-weight:700">${pct}%</span>
+              </div>
+              <div class="userwise-perf-track">
+                <div class="userwise-perf-fill" style="width:${pct}%;background:${pColor}"></div>
+              </div>
+            </div>
+            <div style="margin-top:.6rem;border-top:1px solid var(--border);padding-top:.5rem">
+              <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);margin-bottom:.35rem">Recent Issues</div>
+              ${iss.slice(0,3).map(i=>`
+                <div style="display:flex;align-items:center;gap:.35rem;font-size:.75rem;padding:2px 0">
+                  <a href="${_jiraConfig.baseUrl}/browse/${i.key}" target="_blank"
+                     style="color:#0052cc;font-family:var(--mono);font-weight:700;flex-shrink:0;font-size:.7rem">${i.key}</a>
+                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(i.fields?.summary||'')}</span>
+                  <span class="jira-status-chip ${jiraStatusClass(i.fields?.status?.name||'')}" style="font-size:.6rem;flex-shrink:0">${i.fields?.status?.name||'?'}</span>
+                </div>`).join('')}
+              ${iss.length > 3 ? `<div style="font-size:.72rem;color:var(--text-3);margin-top:.25rem">+${iss.length-3} more issues</div>` : ''}
+            </div>
+          </div>`;
+      }).join('')}
+    </div>`;
+}
+
+// ── Complete tab ──────────────────────────────────────────────────
+function _renderJiraComplete(issues, el) {
+  el.innerHTML = `
+    <table class="data-table" style="font-size:.78rem">
+      <thead>
+        <tr>
+          <th>Key</th><th>Summary</th><th>Type</th><th>Status</th>
+          <th>Assignee</th><th>Priority</th><th>Due Date</th><th>In CRM</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${issues.map(i => {
+          const f = i.fields || {};
+          const linked = (state.tasks||[]).some(t => t.jiraKey === i.key);
+          const overdue = f.duedate && new Date(f.duedate) < new Date() && !['Done','Closed','Resolved'].includes(f.status?.name);
+          return `<tr>
+            <td><a href="${_jiraConfig.baseUrl}/browse/${i.key}" target="_blank"
+               style="color:#0052cc;font-family:var(--mono);font-weight:700;font-size:.72rem">${i.key}</a></td>
+            <td style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(f.summary||'')}">${esc(f.summary||'—')}</td>
+            <td>${(typeof JIRA_TYPE_ICONS!=='undefined'?JIRA_TYPE_ICONS[f.issuetype?.name]||'📋':'📋')} ${esc(f.issuetype?.name||'—')}</td>
+            <td><span class="jira-status-chip ${jiraStatusClass(f.status?.name||'')}">${esc(f.status?.name||'—')}</span></td>
+            <td>${esc(f.assignee?.displayName||'Unassigned')}</td>
+            <td>${(typeof JIRA_PRIO_ICONS!=='undefined'?JIRA_PRIO_ICONS[f.priority?.name]||'▶':'▶')} ${esc(f.priority?.name||'—')}</td>
+            <td style="font-family:var(--mono);font-size:.72rem;color:${overdue?'var(--rose)':'inherit'}">${f.duedate||'—'}</td>
+            <td>${linked
+              ? '<span class="jira-linked-badge">✓ Task</span>'
+              : `<button class="jira-row-btn" onclick="importSingleJiraIssue('${i.key}');renderJiraReport()">+ Add</button>`}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+// ── By Status tab ─────────────────────────────────────────────────
+function _renderJiraByStatus(issues, el) {
+  const byStatus = {};
+  issues.forEach(i => {
+    const s = i.fields?.status?.name || 'Unknown';
+    if (!byStatus[s]) byStatus[s] = [];
+    byStatus[s].push(i);
+  });
+
+  const total = issues.length;
+  el.innerHTML = Object.entries(byStatus)
+    .sort((a,b) => b[1].length - a[1].length)
+    .map(([status, iss]) => {
+      const pct = total ? Math.round(iss.length / total * 100) : 0;
+      const cls = jiraStatusClass(status);
+      return `
+        <div style="margin-bottom:1.1rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
+            <span class="jira-status-chip ${cls}" style="font-size:.78rem">${esc(status)}</span>
+            <span style="font-size:.8rem;font-weight:700;color:var(--text-2)">${iss.length} issues (${pct}%)</span>
+          </div>
+          <div style="height:10px;background:var(--border);border-radius:999px;overflow:hidden;margin-bottom:.5rem">
+            <div style="height:100%;width:${pct}%;border-radius:999px;background:${
+              cls==='jira-done'?'#16a34a':cls==='jira-inprogress'?'#2563eb':cls==='jira-blocked'?'#e11d48':'#94a3b8'
+            };transition:width .6s"></div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:.25rem">
+            ${iss.slice(0, 10).map(i => `
+              <a href="${_jiraConfig.baseUrl}/browse/${i.key}" target="_blank"
+                 style="font-size:.68rem;font-family:var(--mono);background:#f1f5f9;color:#0052cc;padding:2px 6px;border-radius:4px;text-decoration:none;border:1px solid #e2e8f0"
+                 title="${esc(i.fields?.summary||'')}">${i.key}</a>`).join('')}
+            ${iss.length > 10 ? `<span style="font-size:.72rem;color:var(--text-3);align-self:center">+${iss.length-10} more</span>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+}
+
+// ── By Type tab ───────────────────────────────────────────────────
+function _renderJiraByType(issues, el) {
+  const byType = {};
+  issues.forEach(i => {
+    const t = i.fields?.issuetype?.name || 'Unknown';
+    if (!byType[t]) byType[t] = { issues:[], done:0, inProg:0 };
+    byType[t].issues.push(i);
+    const s = i.fields?.status?.name || '';
+    if (['Done','Closed','Resolved'].includes(s)) byType[t].done++;
+    else if (['In Progress','In Development','In Review','Development done'].includes(s)) byType[t].inProg++;
+  });
+
+  const total = issues.length;
+  el.innerHTML = `
+    <table class="data-table" style="font-size:.8rem">
+      <thead>
+        <tr><th>Issue Type</th><th>Total</th><th>Done</th><th>In Progress</th><th>To Do</th><th>% of Total</th><th>Completion %</th></tr>
+      </thead>
+      <tbody>
+        ${Object.entries(byType)
+          .sort((a,b) => b[1].issues.length - a[1].issues.length)
+          .map(([type, data]) => {
+            const pctTotal = total ? Math.round(data.issues.length/total*100) : 0;
+            const pctDone  = data.issues.length ? Math.round(data.done/data.issues.length*100) : 0;
+            const todo     = data.issues.length - data.done - data.inProg;
+            const pColor   = pctDone>=70?'#16a34a':pctDone>=40?'#d97706':'#e11d48';
+            const icon     = (typeof JIRA_TYPE_ICONS!=='undefined'?JIRA_TYPE_ICONS[type]||'📋':'📋');
+            return `<tr>
+              <td><strong>${icon} ${esc(type)}</strong></td>
+              <td><strong>${data.issues.length}</strong></td>
+              <td style="color:#16a34a">${data.done}</td>
+              <td style="color:#2563eb">${data.inProg}</td>
+              <td style="color:var(--text-2)">${todo}</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:.4rem">
+                  <div style="height:6px;width:80px;background:var(--border);border-radius:3px;overflow:hidden">
+                    <div style="height:100%;width:${pctTotal}%;background:var(--accent)"></div>
+                  </div>
+                  <span style="font-size:.75rem">${pctTotal}%</span>
+                </div>
+              </td>
+              <td><span style="font-weight:700;color:${pColor}">${pctDone}%</span></td>
+            </tr>`;
+          }).join('')}
+      </tbody>
+    </table>`;
+}
+
+// ── Export CSV ────────────────────────────────────────────────────
+function exportJiraReportCSV() {
+  const issues = _getFilteredJiraIssues();
+  const rows   = [['Key','Summary','Type','Status','Assignee','Priority','Due Date','In CRM Task']];
+  issues.forEach(i => {
+    const f = i.fields || {};
+    const linked = (state.tasks||[]).some(t => t.jiraKey === i.key);
+    rows.push([
+      i.key,
+      f.summary || '',
+      f.issuetype?.name || '',
+      f.status?.name || '',
+      f.assignee?.displayName || 'Unassigned',
+      f.priority?.name || '',
+      f.duedate || '',
+      linked ? 'Yes' : 'No',
+    ]);
+  });
+
+  // Add user-wise summary sheet
+  if (_jiraReportTab === 'userwise') {
+    rows.push([], ['--- USER-WISE SUMMARY ---'], ['Assignee','Total','Done','In Progress','To Do','Blocked','Bugs','High Priority','Completion %']);
+    const byUser = {};
+    issues.forEach(i => {
+      const name = i.fields?.assignee?.displayName || 'Unassigned';
+      if (!byUser[name]) byUser[name] = [];
+      byUser[name].push(i);
+    });
+    Object.entries(byUser).sort((a,b)=>b[1].length-a[1].length).forEach(([name,iss]) => {
+      const done    = iss.filter(i=>['Done','Closed','Resolved'].includes(i.fields?.status?.name)).length;
+      const inProg  = iss.filter(i=>['In Progress','In Development','In Review','Development done'].includes(i.fields?.status?.name)).length;
+      const todo    = iss.filter(i=>['To Do','Backlog','Open'].includes(i.fields?.status?.name)).length;
+      const blocked = iss.filter(i=>i.fields?.status?.name==='Blocked').length;
+      const bugs    = iss.filter(i=>i.fields?.issuetype?.name==='Bug').length;
+      const highs   = iss.filter(i=>['Highest','High'].includes(i.fields?.priority?.name)).length;
+      const pct     = iss.length ? Math.round(done/iss.length*100) : 0;
+      rows.push([name, iss.length, done, inProg, todo, blocked, bugs, highs, pct+'%']);
+    });
+  }
+
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `jira-report-${_jiraConfig.projectKey||'NHAI'}-${_jiraReportTab}-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  if (typeof writeAudit === 'function') writeAudit('CREATE','reports',`Exported Jira ${_jiraReportTab} report as CSV`);
+}
+
+function printJiraReport() {
+  window.print();
+}
+
+// ══ TICKET MODULES + ATTACHMENTS ══════════════════════════════════
+
+const DEFAULT_MODULES = [
+  {name:'RM',platform:'Backend API'},{name:'AMS',platform:'Backend API'},
+  {name:'UCC',platform:'Web'},{name:'Backend_HighWayQRcode',platform:'Backend API'},
+  {name:'BIRCS',platform:'Backend API'},{name:'NCR',platform:'Web'},
+  {name:'PaymentToAE',platform:'Backend API'},{name:'Payment_Contractor_OM',platform:'Backend API'},
+  {name:'RFI',platform:'Web'},{name:'ESIGN',platform:'Web'},
+  {name:'TM',platform:'Web'},{name:'DR',platform:'Backend API'},
+  {name:'CriticalIssues',platform:'Web'},{name:'ScheduleH',platform:'Web'},
+  {name:'NSV',platform:'Backend API'},{name:'DAMS',platform:'Web'},
+  {name:'Backend_MPR_Digital_OnM',platform:'Backend API'},
+  {name:'Frontend_TS',platform:'Web'},{name:'NHAI-Mobile',platform:'Mobile'},
+];
+
+let _moduleList = JSON.parse(localStorage.getItem('crm_ticket_modules')||'null')||DEFAULT_MODULES;
+let _ticketAttachments = [];
+
+function saveModuleList(){ localStorage.setItem('crm_ticket_modules',JSON.stringify(_moduleList)); }
+
+// Hook into openModal
+const _tmOpenModal = openModal;
+window.openModal = function(id) {
+  _tmOpenModal(id);
+  if (id==='ticketModal')        _initTicketModal();
+  if (id==='manageModulesModal') renderModulesList();
+};
+
+function _initTicketModal() {
+  // Populate module dropdown
+  const modSel = q('ticketModule');
+  if (modSel) {
+    modSel.innerHTML = '<option value="">— Select Module —</option>' +
+      _moduleList.map(m=>`<option value="${m.name}">${m.name}${m.platform?' ('+m.platform+')':''}</option>`).join('');
+  }
+  // Populate contact dropdown
+  const conSel = q('ticketContact');
+  if (conSel) {
+    conSel.innerHTML = '<option value="">— None —</option>' +
+      state.contacts.map(c=>`<option value="${c.id}">${c.name}${c.company?' ('+c.company+')':''}</option>`).join('');
+  }
+  // Populate assignee
+  const asnSel = q('ticketAssignee');
+  if (asnSel) {
+    const users = (window._adminUsers&&window._adminUsers.length)
+      ? window._adminUsers
+      : [{id:'admin',name:'CRM Admin'}];
+    asnSel.innerHTML = '<option value="">— Unassigned —</option>' +
+      users.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
+  }
+  _ticketAttachments = [];
+  renderTicketAttachList();
+  const e=q('ticketFormError'); if(e) e.textContent='';
+}
+
+function onTicketModuleChange(val) {
+  const mod = _moduleList.find(m=>m.name===val);
+  if (mod?.platform) {
+    const p = q('ticketPlatform');
+    if (p) p.value = mod.platform;
+  }
+}
+
+function renderModulesList() {
+  const el = q('modulesList'); if (!el) return;
+  if (!_moduleList.length) {
+    el.innerHTML = '<div style="color:var(--text-3);padding:.5rem">No modules. Add one below.</div>';
+    return;
+  }
+  el.innerHTML = _moduleList.map((m,i) => `
+    <div class="module-item">
+      <div class="module-item-name">${m.name}</div>
+      ${m.platform?`<span class="module-item-badge">${m.platform}</span>`:''}
+      <button class="ticket-attach-remove" onclick="deleteModule(${i})" title="Remove">✕</button>
+    </div>`).join('');
+}
+
+function addModule() {
+  const name = q('newModuleName')?.value.trim();
+  const platform = q('newModulePlatform')?.value||'';
+  if (!name) { alert('Module name required.'); return; }
+  if (_moduleList.find(m=>m.name.toLowerCase()===name.toLowerCase())) {
+    alert('Module already exists.'); return;
+  }
+  _moduleList.push({name, platform});
+  saveModuleList();
+  if (q('newModuleName')) q('newModuleName').value='';
+  renderModulesList();
+  pushNotif(`Module added: ${name}`, platform, '📦','success');
+}
+
+function deleteModule(idx) {
+  if (!confirm(`Remove module "${_moduleList[idx].name}"?`)) return;
+  _moduleList.splice(idx,1);
+  saveModuleList();
+  renderModulesList();
+}
+
+// Attachments
+function ticketDragOver(e){e.preventDefault();q('ticketAttachZone')?.classList.add('drag-over');}
+function ticketDragLeave(){q('ticketAttachZone')?.classList.remove('drag-over');}
+function ticketFileDrop(e){e.preventDefault();ticketDragLeave();handleTicketFiles(e.dataTransfer.files);}
+function ticketFileSelect(e){handleTicketFiles(e.target.files);q('ticketFileInput').value='';}
+
+function handleTicketFiles(files) {
+  [...files].forEach(file=>{
+    if (file.size > 10*1024*1024) {
+      pushNotif('Too large',`${file.name} > 10MB`,'⚠️','warning'); return;
+    }
+    const reader = new FileReader();
+    reader.onload = e => {
+      _ticketAttachments.push({
+        id:crypto.randomUUID(), name:file.name,
+        size:file.size, type:file.type, data:e.target.result
+      });
+      renderTicketAttachList();
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function removeTicketAttachment(id) {
+  _ticketAttachments = _ticketAttachments.filter(a=>a.id!==id);
+  renderTicketAttachList();
+}
+
+function renderTicketAttachList() {
+  const el = q('ticketAttachList'); if (!el) return;
+  if (!_ticketAttachments.length) { el.innerHTML=''; return; }
+  const icons = {'image/':'🖼','application/pdf':'📄','video/':'🎬','text/':'📝'};
+  const icon = t => { for(const[k,v] of Object.entries(icons)) if(t.startsWith(k)) return v; return '📎'; };
+  el.innerHTML = _ticketAttachments.map(a=>`
+    <div class="ticket-attach-item">
+      ${a.type.startsWith('image/')
+        ? `<img src="${a.data}" class="ticket-attach-preview" />`
+        : `<span class="ticket-attach-icon">${icon(a.type)}</span>`}
+      <span class="ticket-attach-name" title="${a.name}">${a.name}</span>
+      <span class="ticket-attach-size">${fmtSize(a.size)}</span>
+      <button class="ticket-attach-remove" onclick="removeTicketAttachment('${a.id}')">✕</button>
+    </div>`).join('');
+}
+
+// Override saveTicket with enhanced version
+window.saveTicket = async function() {
+  const title = q('ticketTitle')?.value.trim();
+  const errEl = q('ticketFormError');
+  const btn   = q('saveTicketBtn');
+  if (errEl) errEl.textContent='';
+  if (!title) { if(errEl) errEl.textContent='Title is required.'; return; }
+  if (!state.session) { if(errEl) errEl.textContent='Please log in first.'; return; }
+  const attachData = _ticketAttachments.map(a=>({name:a.name,size:a.size,type:a.type,data:a.data}));
+  const ticket = {
+    title,
+    priority:    q('ticketPriority')?.value    || 'Medium',
+    status:      q('ticketStatus')?.value      || 'Open',
+    contactId:   q('ticketContact')?.value     || null,
+    type:        q('ticketType')?.value        || 'Bug',
+    severity:    q('ticketSeverity')?.value    || 'S3 - Medium',
+    module:      q('ticketModule')?.value      || '',
+    submodule:   q('ticketSubmodule')?.value.trim() || '',
+    environment: q('ticketEnv')?.value         || 'Production',
+    platform:    q('ticketPlatform')?.value    || '',
+    assignee:    q('ticketAssignee')?.value    || '',
+    dueDate:     q('ticketDueDate')?.value     || '',
+    jiraKey:     q('ticketJiraKey')?.value.trim() || '',
+    description: q('ticketDesc')?.value.trim()     || '',
+    expected:    q('ticketExpected')?.value.trim() || '',
+    actual:      q('ticketActual')?.value.trim()   || '',
+    attachments: JSON.stringify(attachData),
+  };
+  if (btn) { btn.disabled=true; btn.textContent='Creating…'; }
+  const ok = await apiCreate('tickets', ticket);
+  if (ok) {
+    ['ticketTitle','ticketSubmodule','ticketJiraKey','ticketDesc','ticketExpected','ticketActual']
+      .forEach(id=>{const el=q(id);if(el)el.value='';});
+    ['ticketContact','ticketAssignee','ticketModule','ticketPlatform']
+      .forEach(id=>{const el=q(id);if(el)el.value='';});
+    if(q('ticketDueDate')) q('ticketDueDate').value='';
+    _ticketAttachments=[]; renderTicketAttachList();
+    closeModal('ticketModal');
+    const r=await apiFetch('/tickets'); if(r&&r.ok) state.tickets=await r.json();
+    renderAll();
+    pushNotif('Ticket created',title.slice(0,50),'🎫','success');
+  } else {
+    if(errEl) errEl.textContent='Failed to create ticket.';
+  }
+  if (btn) { btn.disabled=false; btn.textContent='🎫 Create Ticket'; }
+};
