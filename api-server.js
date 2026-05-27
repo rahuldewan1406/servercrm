@@ -25,6 +25,36 @@ app.use(express.json({ limit: '512kb', strict: true }));
 
 app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
 app.use('/jira-proxy', require('./server/jira-proxy'));
+// ── Email proxy (calls SES server internally via parsed body) ────────
+function proxyToSES(req, res, sesPath) {
+  const body = JSON.stringify(req.body || {});
+  const opts = {
+    hostname: '127.0.0.1',
+    port: 6001,
+    path: sesPath,
+    method: req.method,
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+  };
+  const proxy = http.request(opts, r => {
+    let data = '';
+    r.on('data', d => data += d);
+    r.on('end', () => {
+      res.status(r.statusCode);
+      try { res.json(JSON.parse(data)); } catch(e) { res.send(data); }
+    });
+  });
+  proxy.on('error', e => {
+    console.error('[Email proxy error]', e.message);
+    res.status(502).json({ message: 'Email service unavailable: ' + e.message });
+  });
+  proxy.write(body);
+  proxy.end();
+}
+
+app.post('/email/send',  (req, res) => proxyToSES(req, res, '/api/send-email'));
+app.post('/email/test',  (req, res) => proxyToSES(req, res, '/api/send-email/test'));
+app.get('/email/health', (req, res) => proxyToSES(req, res, '/api/health'));
+
 app.use('/auth',  require('./server/auth'));
 app.use('/users', require('./server/users'));
 app.use('/chat',  require('./server/chat'));
@@ -139,3 +169,5 @@ app.put('/modules', async (req, res) => {
     res.status(500).json({ error: 'Failed to save modules.' });
   }
 });
+
+

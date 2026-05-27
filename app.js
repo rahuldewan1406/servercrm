@@ -2,7 +2,7 @@
 // API paths — auto-detect: production uses Nginx proxy, dev uses localhost
 const _isDev   = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const API      = _isDev ? 'http://localhost:6002' : window.location.origin + '/api';
-const SMTP_API = _isDev ? 'http://localhost:6001' : window.location.origin + '/smtp';
+const SMTP_API = _isDev ? 'http://localhost:6001/api' : window.location.origin + '/api/email';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const state = {
