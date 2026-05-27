@@ -1,124 +1,124 @@
-const express = require('express');
-const cors = require('cors');
-const nodemailer = require('nodemailer');
+'use strict';
 require('dotenv').config();
+const express = require('express');
+const cors    = require('cors');
+const { SESClient, SendEmailCommand, GetAccountSendingEnabledCommand } = require('@aws-sdk/client-ses');
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '2mb' }));
 
-// ── Email validation ──────────────────────────────────────────────────────────
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-function isValidEmail(addr) { return typeof addr === 'string' && EMAIL_RE.test(addr.trim()); }
+const isValid  = a => typeof a === 'string' && EMAIL_RE.test(a.trim());
 
-// ── In-memory rate limiter ────────────────────────────────────────────────────
-// Max RATE_LIMIT_MAX requests per RATE_LIMIT_WINDOW_MS per IP
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-const RATE_LIMIT_MAX = 10;              // max 10 send requests per minute per IP
-const rateLimitMap = new Map();
-
+const rlMap = new Map();
 function rateLimiter(req, res, next) {
-  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  const ip = req.ip || 'unknown';
   const now = Date.now();
-  const entry = rateLimitMap.get(ip) || { count: 0, windowStart: now };
-
-  if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
-    entry.count = 0;
-    entry.windowStart = now;
-  }
-  entry.count += 1;
-  rateLimitMap.set(ip, entry);
-
-  if (entry.count > RATE_LIMIT_MAX) {
-    const retryAfter = Math.ceil((RATE_LIMIT_WINDOW_MS - (now - entry.windowStart)) / 1000);
-    res.set('Retry-After', retryAfter);
-    return res.status(429).json({ message: `Too many requests. Please wait ${retryAfter}s before sending again.` });
-  }
+  const rec = rlMap.get(ip) || { count:0, start:now };
+  if (now - rec.start > 60000) { rec.count=0; rec.start=now; }
+  rec.count++;
+  rlMap.set(ip, rec);
+  if (rec.count > 10) return res.status(429).json({ message:'Too many requests. Wait 60s.' });
   next();
 }
+setInterval(() => { const now=Date.now(); for(const[ip,r]of rlMap)if(now-r.start>120000)rlMap.delete(ip); }, 60000);
 
-// Periodically clean up old entries to prevent memory leak
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, entry] of rateLimitMap.entries()) {
-    if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) rateLimitMap.delete(ip);
-  }
-}, RATE_LIMIT_WINDOW_MS);
+const SES_REGION    = process.env.SES_REGION    || 'ap-south-1';
+const SES_FROM      = process.env.SES_FROM_EMAIL || 'noreply@dic.org.in';
+const SES_FROM_NAME = process.env.SES_FROM_NAME  || 'DIC-NHAI CRM';
 
-// ── SMTP setup ────────────────────────────────────────────────────────────────
-const smtpHost = process.env.SMTP_HOST;
-const smtpPort = Number(process.env.SMTP_PORT || 587);
-const smtpSecure = String(process.env.SMTP_SECURE || 'false') === 'true';
-const smtpUser = process.env.SMTP_USER;
-const smtpPass = process.env.SMTP_PASS;
-const smtpFrom = process.env.SMTP_FROM || smtpUser;
-const requiredEnv = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS'];
-const missingEnv = requiredEnv.filter((key) => !process.env[key]);
+const ses = new SESClient({ region: SES_REGION });
 
-const transporter = nodemailer.createTransport({
-  host: smtpHost,
-  port: smtpPort,
-  secure: smtpSecure,
-  auth: smtpUser && smtpPass ? { user: smtpUser, pass: smtpPass } : undefined
-});
-
-const smtpConfigured = missingEnv.length === 0;
-if (!smtpConfigured) {
-  console.warn(`WARNING: SMTP is not fully configured. Missing: ${missingEnv.join(', ')}.`);
-  console.warn('Create a .env file from .env.example and set SMTP_HOST, SMTP_USER, and SMTP_PASS.');
-} else {
-  transporter.verify((err) => {
-    if (err) console.warn('SMTP verification failed:', err.message);
-    else console.log('SMTP transport is configured and ready.');
-  });
-}
-
-// ── Routes ────────────────────────────────────────────────────────────────────
-app.post('/api/send-email', rateLimiter, async (req, res) => {
-  const { recipients, subject, body } = req.body;
-
-  // Structural validation
-  if (!Array.isArray(recipients) || !recipients.length || !subject || !body) {
-    return res.status(400).json({ message: 'Invalid payload.' });
-  }
-
-  // Email address validation — reject any invalid address
-  const invalidAddrs = recipients.filter((r) => !isValidEmail(r));
-  if (invalidAddrs.length) {
-    return res.status(400).json({
-      message: `Invalid email address${invalidAddrs.length > 1 ? 'es' : ''}: ${invalidAddrs.join(', ')}`
-    });
-  }
-
-  // Cap recipients to prevent accidental spam
-  const MAX_RECIPIENTS = 100;
-  if (recipients.length > MAX_RECIPIENTS) {
-    return res.status(400).json({ message: `Too many recipients. Maximum is ${MAX_RECIPIENTS}.` });
-  }
-
-  if (!smtpConfigured) {
-    return res.status(500).json({ message: 'SMTP is not configured. Create a .env file from .env.example and restart the backend.' });
-  }
-
+async function checkSES() {
   try {
-    await transporter.sendMail({ from: smtpFrom, to: recipients.join(','), subject, text: body });
-    res.json({ message: `Email sent to ${recipients.length} recipient(s).` });
-  } catch (error) {
-    console.error('SMTP send failed:', error);
-    res.status(500).json({ message: `SMTP send failed: ${error.message}` });
+    await ses.send(new GetAccountSendingEnabledCommand({}));
+    console.log(`[SES] Connected ✅  region:${SES_REGION}  from:${SES_FROM}`);
+  } catch(e) {
+    console.warn(`[SES] Check failed: ${e.message}`);
+  }
+}
+checkSES();
+
+app.post('/api/send-email', rateLimiter, async (req, res) => {
+  const { to, subject, body, html, replyTo } = req.body || {};
+  const recipients = (Array.isArray(to) ? to : [to]).filter(Boolean).map(s=>s.trim());
+  if (!recipients.length) return res.status(400).json({ message:'At least one recipient required.' });
+  const invalid = recipients.filter(e=>!isValid(e));
+  if (invalid.length) return res.status(400).json({ message:`Invalid email(s): ${invalid.join(', ')}` });
+  if (!subject?.trim()) return res.status(400).json({ message:'Subject is required.' });
+  if (!body?.trim() && !html?.trim()) return res.status(400).json({ message:'Email body is required.' });
+  try {
+    const cmd = new SendEmailCommand({
+      Source: `${SES_FROM_NAME} <${SES_FROM}>`,
+      Destination: { ToAddresses: recipients },
+      Message: {
+        Subject: { Data: subject.trim(), Charset:'UTF-8' },
+        Body: {
+          ...(html?.trim() && { Html: { Data: html.trim(), Charset:'UTF-8' } }),
+          Text: { Data: body?.trim() || html?.replace(/<[^>]+>/g,'') || '', Charset:'UTF-8' },
+        },
+      },
+      ...(replyTo && isValid(replyTo) && { ReplyToAddresses:[replyTo] }),
+    });
+    const r = await ses.send(cmd);
+    console.log(`[SES] Sent to ${recipients.join(',')} MessageId:${r.MessageId}`);
+    res.json({ message:'Email sent successfully.', messageId:r.MessageId });
+  } catch(e) {
+    console.error('[SES] Send failed:', e.name, e.message);
+    const msg = e.name==='MessageRejected' ? `SES rejected: ${e.message}`
+      : e.name==='MailFromDomainNotVerifiedException' ? `Sender not verified: ${SES_FROM}`
+      : e.name==='AccountSendingPausedException' ? 'SES account sending paused'
+      : `Email failed: ${e.message}`;
+    res.status(500).json({ message: msg, code: e.name });
   }
 });
 
-app.get('/api/health', (req, res) => {
-  res.json({ status: smtpConfigured ? 'ok' : 'smtp-missing' });
+app.post('/api/send-email/test', rateLimiter, async (req, res) => {
+  const { to } = req.body || {};
+  if (!to || !isValid(to)) return res.status(400).json({ message:'Valid "to" email required.' });
+  try {
+    const cmd = new SendEmailCommand({
+      Source: `${SES_FROM_NAME} <${SES_FROM}>`,
+      Destination: { ToAddresses:[to] },
+      Message: {
+        Subject: { Data:'DIC-NHAI CRM — SES Email Test', Charset:'UTF-8' },
+        Body: {
+          Html: { Data:`<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto">
+            <div style="background:#0a1628;color:#f0c060;padding:16px 24px;border-radius:10px 10px 0 0">
+              <strong style="font-size:18px">DIC — NHAI CRM</strong>
+            </div>
+            <div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 10px 10px;padding:28px">
+              <h2 style="color:#0a1628">✅ AWS SES Working!</h2>
+              <p style="color:#4b5563;line-height:1.6">This test confirms AWS SES is configured correctly for <strong>Digital India Corporation — NHAI CRM</strong>.</p>
+              <div style="background:#f8faff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin:20px 0;font-size:13px">
+                <div><strong>From:</strong> ${SES_FROM}</div>
+                <div><strong>Region:</strong> ${SES_REGION}</div>
+                <div><strong>Time:</strong> ${new Date().toISOString()}</div>
+              </div>
+              <p style="color:#98a0ad;font-size:12px;margin-top:16px">Digital India Corporation · National Highways Authority of India</p>
+            </div>
+          </div>`, Charset:'UTF-8' },
+          Text: { Data:`DIC-NHAI CRM — SES Test\nFrom: ${SES_FROM}\nRegion: ${SES_REGION}\nTime: ${new Date().toISOString()}`, Charset:'UTF-8' },
+        },
+      },
+    });
+    const r = await ses.send(cmd);
+    res.json({ message:`Test email sent to ${to}`, messageId:r.MessageId });
+  } catch(e) {
+    console.error('[SES] Test failed:', e.name, e.message);
+    res.status(500).json({ message:`Test failed: ${e.message}`, code:e.name });
+  }
 });
 
-app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ message: 'Internal server error.' });
+app.get('/api/health', async (req, res) => {
+  let sesStatus='unknown';
+  try { await ses.send(new GetAccountSendingEnabledCommand({})); sesStatus='ok'; }
+  catch(e) { sesStatus=e.message; }
+  res.json({ status:'ok', ses:{ status:sesStatus, region:SES_REGION, from:SES_FROM } });
 });
 
-process.on('unhandledRejection', (reason) => { console.error('Unhandled Rejection at:', reason); });
-process.on('uncaughtException', (error) => { console.error('Uncaught Exception:', error); process.exit(1); });
+app.get('/health', (req,res) => res.json({ status:'ok', transport:'ses' }));
 
-app.listen(6001, () => console.log('SMTP API running on http://localhost:6001'));
+const PORT = process.env.SMTP_SERVER_PORT || 3001;
+app.listen(PORT, () => console.log(`[SES Server] Listening on port ${PORT}`));
