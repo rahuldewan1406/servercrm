@@ -51,7 +51,13 @@ function proxyToSES(req, res, sesPath) {
   proxy.end();
 }
 
-app.post('/email/send',  (req, res) => proxyToSES(req, res, '/api/send-email'));
+app.post('/email/send', (req, res) => {
+  // Normalize: frontend sends {recipients} or {to}
+  if (req.body.recipients && !req.body.to) {
+    req.body.to = req.body.recipients;
+  }
+  proxyToSES(req, res, '/api/send-email');
+});
 app.post('/email/test',  (req, res) => proxyToSES(req, res, '/api/send-email/test'));
 app.get('/email/health', (req, res) => proxyToSES(req, res, '/api/health'));
 

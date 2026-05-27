@@ -679,7 +679,7 @@ function renderSession() {
 // ── SMTP ──────────────────────────────────────────────────────────────────────
 async function checkSmtp() {
   try {
-    const r = await fetch(`${SMTP_API}/api/health`); const d = await r.json();
+    const r = await fetch(`${SMTP_API}/health`); const d = await r.json();
     const ok = r.ok && d.status==='ok';
     q('smtpDot').className = `status-dot ${ok?'online':'warning'}`;
     q('smtpDot').title = ok ? 'SMTP Ready' : 'SMTP Not Configured';
@@ -709,7 +709,7 @@ async function sendMail(e) {
   if (!payload.subject||!payload.body) { showBanner(banner,'Complete subject and message.','warning'); return; }
   showBanner(banner,'Sending…','info');
   try {
-    const r = await fetch(`${SMTP_API}/api/send-email`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const r = await fetch(`${SMTP_API}/send`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     const d = await r.json();
     if (!r.ok) throw new Error(d.message);
     showBanner(banner, d.message||'Email sent.', 'info');
@@ -1382,7 +1382,7 @@ This report was generated automatically by OrgCRM.
 
   showBanner(banner,'Sending…','info');
   try {
-    const r = await fetch(`${SMTP_API}/api/send-email`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({recipients,subject,body})});
+    const r = await fetch(`${SMTP_API}/send`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({recipients,subject,body})});
     const d = await r.json();
     if (!r.ok) throw new Error(d.message);
     showBanner(banner,`✓ Report sent to ${recipients.length} recipient(s).`,'info');
@@ -3102,7 +3102,7 @@ async function sendBulkEmail() {
       body: body.replace(/\{\{name\}\}/g, contact.name).replace(/\{\{company\}\}/g, contact.company||''),
     };
     try {
-      const r = await fetch(`${SMTP_API}/api/send-email`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(personalised) });
+      const r = await fetch(`${SMTP_API}/send`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(personalised) });
       if (r.ok) sent++; else failed++;
     } catch { failed++; }
   }
@@ -5308,7 +5308,7 @@ async function sendApprovalEmail(apr, type) {
   };
   try {
     const to = type === 'request' ? apr.approver : (state.session?.email || apr.requestedBy);
-    await fetch(`${SMTP_API}/api/send-email`, {
+    await fetch(`${SMTP_API}/send`, {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ recipients:[to], subject:subjects[type], body:bodies[type] })
     });
@@ -5439,7 +5439,7 @@ function scanProjectDelays() {
       // Trigger email to project manager
       const mgr = state.contacts.find(c=>c.name===p.manager||c.email===p.manager);
       if (mgr?.email) {
-        fetch(`${SMTP_API}/api/send-email`,{method:'POST',headers:{'Content-Type':'application/json'},
+        fetch(`${SMTP_API}/send`,{method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({recipients:[mgr.email],subject:`[DELAY ALERT] Project: ${p.name}`,
             body:`Dear ${p.manager},\n\nProject "${p.name}" is overdue.\n\nDue Date: ${fmtDate(p.dueDate)}\nCurrent Status: ${p.status}\nProgress: ${p.progress||0}%\n\nPlease update the project status or revise the timeline.\n\nDIC-NHAI CRM System`
           })}).catch(()=>{});
