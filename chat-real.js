@@ -244,3 +244,13 @@ _emojiStyle.textContent = `
   }
 `;
 document.head.appendChild(_emojiStyle);
+
+// Override renderChatList to show socket.io rooms instead of SMS contacts
+const _origRenderChatList = window.renderChatList;
+window.renderChatList = function() {
+  if (_rooms && _rooms.length > 0) {
+    chatRenderList();
+  } else {
+    if (_origRenderChatList) _origRenderChatList();
+  }
+};

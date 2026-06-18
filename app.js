@@ -11,7 +11,7 @@ const state = {
   tickets:      [],
   opportunities: JSON.parse(localStorage.getItem('crm_opps')        || '[]'),
   accounts:      JSON.parse(localStorage.getItem('crm_accounts')    || '[]'),
-  projects:      JSON.parse(localStorage.getItem('crm_projects')    || '[]'),
+  projects:      [],  // loaded from DB via /projects API
   tasks:         JSON.parse(localStorage.getItem('crm_tasks')       || '[]'),
   milestones:    JSON.parse(localStorage.getItem('crm_milestones')  || '[]'),
   activities:    JSON.parse(localStorage.getItem('crm_activities')  || '[]'),
@@ -326,7 +326,7 @@ function persistLocal() {
   );
   localStorage.setItem('crm_opps', JSON.stringify(state.opportunities));
   localStorage.setItem('crm_accounts', JSON.stringify(state.accounts));
-  localStorage.setItem('crm_projects', JSON.stringify(state.projects));
+  // projects now stored in DB — not localStorage
   localStorage.setItem('crm_tasks', JSON.stringify(state.tasks));
   localStorage.setItem('crm_milestones', JSON.stringify(state.milestones));
   localStorage.setItem('crm_activities', JSON.stringify(state.activities));
@@ -418,7 +418,7 @@ async function login(e) {
     if (screen) screen.classList.add('hidden');
     setTimeout(()=>{ if(screen) screen.style.display='none'; }, 450);
     q('loginForm').reset();
-    renderSession(); await loadAllData(); renderAll();
+    renderSession(); await loadAllData(); syncProjectDropdowns(); renderAll();
     // Show chat button after login
     const chatWrap = q('chatBellWrap');
     if (chatWrap) { chatWrap.classList.remove('hidden'); chatWrap.style.display='flex'; }
@@ -434,9 +434,17 @@ async function logout() {
   writeAudit('LOGOUT','auth',`${state.session?.name||''} logged out`);
   if (state.refreshToken) apiFetch('/auth/logout',{method:'POST',body:JSON.stringify({refreshToken:state.refreshToken})}).catch(()=>{});
   Object.assign(state, { session:null, accessToken:null, refreshToken:null, permissions:new Set(), contacts:[], leads:[], tickets:[] });
-  // Show login screen again
+  // Show login screen again — reset button state
   const screen = q('loginScreen');
   if (screen) { screen.style.display='flex'; setTimeout(()=>screen.classList.remove('hidden'),10); }
+  const btn = q('loginSubmitBtn');
+  const btnText = q('loginBtnText');
+  const spinner = q('loginBtnSpinner');
+  if (btn) btn.disabled = false;
+  if (btnText) btnText.classList.remove('hidden');
+  if (spinner) spinner.classList.add('hidden');
+  const errEl = q('loginStatus');
+  if (errEl) errEl.textContent = '';
   renderSession(); renderAll();
 }
 
@@ -446,6 +454,7 @@ async function loadAllData() {
     apiFetch('/contacts').then(r=>r&&r.ok?r.json().then(d=>state.contacts=d):null),
     apiFetch('/leads').then(r=>r&&r.ok?r.json().then(d=>state.leads=d):null),
     apiFetch('/tickets').then(r=>r&&r.ok?r.json().then(d=>state.tickets=d):null),
+    apiFetch('/projects').then(r=>r&&r.ok?r.json().then(d=>state.projects=d):null),
   ]);
 }
 async function apiCreate(res, body) {
@@ -609,14 +618,47 @@ function saveAccount() {
 }
 
 
-function saveProject() {
+async function saveProject() {
   const name = q('projectName').value.trim();
-  const mgr  = q('projectManager').value.trim();
+  const mgr  = q('projectManager')?.value?.trim() || '';
   if (!name) { alert('Project name is required.'); return; }
-  if (!mgr)  { alert('Project manager is required.'); return; }
-  state.projects.push({ id:crypto.randomUUID(), created_at:new Date().toISOString(), name, status:q('projectStatus').value, priority:q('projectPriority').value, manager:mgr, startDate:q('projectStartDate').value, dueDate:q('projectDueDate').value, budget:Number(q('projectBudget').value||0), contactId:q('projectContact').value||null, description:q('projectDesc').value.trim(), progress:0 });
-  ['projectName','projectManager','projectStartDate','projectDueDate','projectBudget','projectDesc'].forEach(id=>{const el=q(id);if(el)el.value='';});
-  persistLocal(); closeModal('projectModal'); renderAll();
+  const body = { name, status:q('projectStatus').value, priority:q('projectPriority').value,
+    description:q('projectDesc').value.trim(), start_date:q('projectStartDate').value||null,
+    end_date:q('projectDueDate').value||null, budget:Number(q('projectBudget').value||0)||null, tags:mgr?[mgr]:[] };
+  const r = await apiFetch('/projects', { method:'POST', body:JSON.stringify(body) });
+  if (r && r.ok) {
+    const project = await r.json();
+    state.projects.unshift(project);
+    ['projectName','projectStartDate','projectDueDate','projectBudget','projectDesc'].forEach(id=>{const el=q(id);if(el)el.value='';});
+    persistLocal(); closeModal('projectModal'); renderAll();
+  } else { alert('Failed to save project.'); }
+}
+async function openNewProjectModal() {
+  const usersRes = await apiFetch('/users');
+  const users = usersRes?.ok ? await usersRes.json() : [];
+  const sel = document.getElementById('projectManager');
+  if (sel) {
+    sel.innerHTML = '<option value="">— Select Manager —</option>';
+    const seen = new Set();
+    [...users, ...(state.contacts||[])].forEach(p => {
+      if (p.name && !seen.has(p.name)) {
+        seen.add(p.name);
+        const opt = document.createElement('option');
+        opt.value = p.name; opt.textContent = p.name + (p.email?' ('+p.email+')':p.company?' — '+p.company:'');
+        sel.appendChild(opt);
+      }
+    });
+  }
+  const contactSel = document.getElementById('projectContact');
+  if (contactSel) {
+    contactSel.innerHTML = '<option value="">— None —</option>';
+    (state.contacts||[]).forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id; opt.textContent = c.name + (c.company?' — '+c.company:'');
+      contactSel.appendChild(opt);
+    });
+  }
+  openModal('projectModal');
 }
 
 function saveTask() {
@@ -791,7 +833,10 @@ function syncContactDropdowns() {
 }
 function syncProjectDropdowns() {
   const opts = '<option value="">— None —</option>' + state.projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
-  ['taskProject','milestoneProject','taskProjectFilter'].forEach(id=>{ const el=q(id); if(el) el.innerHTML=(id==='taskProjectFilter'?'<option value="">All Projects</option>':'')+opts; });
+  ['taskProject','milestoneProject','taskProjectFilter','jiraCrmProject'].forEach(id=>{
+    const el=q(id);
+    if(el) el.innerHTML=(id==='taskProjectFilter'?'<option value="">All Projects</option>':(id==='jiraCrmProject'?'<option value="">— Select —</option>':'<option value="">— None —</option>'))+state.projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+  });
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -5933,8 +5978,48 @@ function renderAdminRoles() {
     }).join('');
   }
 
-  // Permission matrix
+  // Permission matrix — interactive
   const matrixEl = q('adminPermMatrix');
+  if (!matrixEl) return;
+  matrixEl.innerHTML = '<div style="padding:1rem;color:var(--text-3)">Loading...</div>';
+  apiFetch('/admin/permissions').then(async r => {
+    if (!r||!r.ok){matrixEl.innerHTML='<div style="color:red;padding:1rem">Failed to load permissions</div>';return;}
+    const {roles,permissions,matrix} = await r.json();
+    window._permGranted = new Set(matrix.map(m=>m.role_id+'|'+m.permission_id));
+    window._permPending = {}; // track pending changes
+    const modules = [...new Set(permissions.map(p=>p.key.split('.')[0]))];
+    const actions = ['read','create','update','delete'];
+    let html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">'
+      +'<span style="font-size:.78rem;color:var(--text-3)">✏️ Check/uncheck permissions then click Save.</span>'
+      +'<button id="permSaveBtn" onclick="savePermissions()" style="padding:6px 18px;background:#1E3A6E;color:#fff;border:none;border-radius:8px;font-size:.82rem;cursor:pointer;font-weight:600">💾 Save Changes</button>'
+      +'</div>'
+      +'<div id="permSaveStatus" style="font-size:.78rem;margin-bottom:.5rem;min-height:18px"></div>'
+      +'<div style="overflow-x:auto"><table class="perm-matrix-table"><thead><tr><th>Module</th><th>Action</th>';
+    roles.forEach(r=>{html+='<th style="text-align:center;min-width:80px">'+r.name.replace('_',' ')+'</th>';});
+    html+='</tr></thead><tbody>';
+    modules.forEach(mod=>{
+      actions.forEach((act,i)=>{
+        const permId='perm_'+mod+'_'+act;
+        if(!permissions.find(p=>p.id===permId)) return;
+        html+='<tr>';
+        if(i===0){const cnt=actions.filter(a=>permissions.find(p=>p.id==='perm_'+mod+'_'+a)).length;html+='<td class="perm-module" rowspan="'+cnt+'" style="font-weight:600">'+mod.charAt(0).toUpperCase()+mod.slice(1)+'</td>';}
+        html+='<td class="perm-action" style="font-size:.8rem">'+act+'</td>';
+        roles.forEach(role=>{
+          const key=role.id+'|'+permId;
+          const isGranted=window._permGranted.has(key);
+          const isAdmin=role.id==='role_admin';
+          html+='<td class="perm-cell" style="text-align:center"><input type="checkbox"'+(isGranted?' checked':'')+(isAdmin?' disabled title="Admin always has full access"':'')+' data-role="'+role.id+'" data-perm="'+permId+'" onchange="markPermChange(this)" style="width:16px;height:16px;accent-color:#22c55e;cursor:'+(isAdmin?'not-allowed':'pointer')+'"/></td>';
+        });
+        html+='</tr>';
+      });
+    });
+    html+='</tbody></table></div>';
+    matrixEl.innerHTML=html;
+  });
+  return;
+  // OLD STATIC CODE BELOW — unreachable
+  const _unused_matrixEl = q('adminPermMatrix');
+  if (!_unused_matrixEl) return;
   if (!matrixEl) return;
 
   const modules = ['contacts','leads','tickets','projects','documents','reports','users','approvals'];
@@ -7170,4 +7255,174 @@ window.saveTicket = async function() {
     if(errEl) errEl.textContent='Failed to create ticket.';
   }
   if (btn) { btn.disabled=false; btn.textContent='🎫 Create Ticket'; }
+};
+
+/* ══════════════════════════════════════════════════════════════
+   DIC AI ASSISTANT — CRM Integration
+   ══════════════════════════════════════════════════════════════ */
+(function() {
+  const AI_BACKEND = '/codescan/dic-ai/chat';
+  const GUARD = [
+    /\b(password|passwd|api[_\s-]?key|secret\b|access[_\s-]?token)\b/i,
+    /\b(porn|xxx|nude|naked|sex\s+video|adult\s+content)\b/i,
+    /\b(aadhaar\s+number|pan\s+card\s+number|bank\s+account\s+number)\b/i,
+    /\b(make\s+a?\s*bomb|synthesize\s+drug|hack\s+into|write\s+malware)\b/i,
+  ];
+  let crmAiModel = 'llama3.2:1b', crmAiLabel = 'Llama 3.2 1B';
+  let crmAiHistory = [], crmAiLoading = false;
+  // Register model select callback — called by inline stub in HTML
+  window.__crmAiOnModelSelect = function(model, label) {
+    crmAiModel = model;
+    crmAiLabel = label;
+    crmAiHistory = [];
+    window.crmAiAddSys('Switched to ' + crmAiLabel + ' · conversation reset');
+  };
+  function crmAiEsc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  function crmAiRender(raw){
+    let s=crmAiEsc(raw);
+    s=s.replace(/```(\w*)\n?([\s\S]*?)```/g,(_,l,c)=>'<pre><code>'+crmAiEsc(c.trim())+'</code></pre>');
+    s=s.replace(/`([^`\n]+)`/g,'<code>$1</code>');
+    s=s.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+    s=s.replace(/\*(.+?)\*/g,'<em>$1</em>');
+    s=s.split(/\n\n+/).map(p=>p.trim()?'<p>'+p.replace(/\n/g,'<br>')+'</p>':'').join('');
+    return s;
+  }
+  function crmAiScrollBot(){const m=document.getElementById('crm-ai-messages');if(m)m.scrollTop=m.scrollHeight;}
+  function crmAiHideChips(){const c=document.getElementById('crm-ai-chips');if(c)c.style.display='none';}
+  window.crmAiAddSys = function(text){
+    const m=document.getElementById('crm-ai-messages'); if(!m) return;
+    const d=document.createElement('div'); d.className='crm-ai-bubble-sys'; d.textContent=text;
+    m.appendChild(d); crmAiScrollBot();
+  };
+  function crmAiAddUser(text){
+    crmAiHideChips();
+    const m=document.getElementById('crm-ai-messages');
+    const d=document.createElement('div');
+    d.innerHTML='<div class="crm-ai-bubble-user">'+crmAiEsc(text)+'</div><div class="crm-ai-meta" style="text-align:right">You</div>';
+    m.appendChild(d); crmAiScrollBot();
+  }
+  function crmAiAddBot(text,blocked){
+    const m=document.getElementById('crm-ai-messages');
+    const d=document.createElement('div');
+    d.innerHTML='<div class="'+(blocked?'crm-ai-bubble-block':'crm-ai-bubble-bot')+'">'+(blocked?crmAiEsc(text):crmAiRender(text))+'</div><div class="crm-ai-meta">'+crmAiLabel+'</div>';
+    m.appendChild(d); crmAiScrollBot();
+  }
+  function crmAiShowTyping(){
+    const m=document.getElementById('crm-ai-messages');
+    const d=document.createElement('div'); d.id='crm-ai-typing';
+    d.innerHTML='<div class="crm-ai-typing"><div class="crm-ai-typing-dot"></div><div class="crm-ai-typing-dot"></div><div class="crm-ai-typing-dot"></div></div>';
+    m.appendChild(d); crmAiScrollBot();
+  }
+  function crmAiRemoveTyping(){const t=document.getElementById('crm-ai-typing');if(t)t.remove();}
+  window.crmAiHandleKey = function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(window.crmAiSendFn)window.crmAiSendFn();}};
+  window.crmAiAutoResize = function(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,120)+'px';};
+  window.crmAiSend = function(){if(window.crmAiSendFn)window.crmAiSendFn();};
+  window.crmAiUsePrompt = function(text){const ta=document.getElementById('crm-ai-input');if(ta){ta.value=text;window.crmAiAutoResize(ta);ta.focus();}};
+  window.crmAiSend = window.crmAiSendFn = async function(){
+    if(crmAiLoading) return;
+    const ta=document.getElementById('crm-ai-input');
+    const text=ta?.value?.trim(); if(!text) return;
+    if(GUARD.some(p=>p.test(text))){
+      crmAiAddUser(text); ta.value=''; window.crmAiAutoResize(ta);
+      crmAiAddBot('##REFUSED## Message stopped by content guardrails.',true); return;
+    }
+    crmAiAddUser(text); ta.value=''; window.crmAiAutoResize(ta);
+    crmAiHistory.push({role:'user',content:text});
+    crmAiLoading=true;
+    document.getElementById('crm-ai-send-btn').disabled=true;
+    document.getElementById('crm-ai-model-status').textContent='Thinking…';
+    crmAiShowTyping();
+    try {
+      const res = await fetch(AI_BACKEND,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:crmAiModel,messages:crmAiHistory})});
+      const contentType = res.headers.get('content-type')||'';
+      if(contentType.includes('text/event-stream')){
+        crmAiRemoveTyping();
+        const m=document.getElementById('crm-ai-messages');
+        const d=document.createElement('div');
+        d.innerHTML='<div class="crm-ai-bubble-bot" id="crm-ai-stream-bub"></div><div class="crm-ai-meta">'+crmAiLabel+'</div>';
+        m.appendChild(d);
+        const bubble=document.getElementById('crm-ai-stream-bub'); bubble.removeAttribute('id');
+        const reader=res.body.getReader(); const decoder=new TextDecoder(); let fullReply='';
+        while(true){
+          const {done,value}=await reader.read(); if(done) break;
+          const lines=decoder.decode(value).split('\n').filter(l=>l.startsWith('data: '));
+          for(const line of lines){
+            const data=line.slice(6); if(data==='[DONE]') continue;
+            try{const j=JSON.parse(data);if(j.token){fullReply+=j.token;bubble.innerHTML=crmAiRender(fullReply);crmAiScrollBot();}}catch{}
+          }
+        }
+        crmAiHistory.push({role:'assistant',content:fullReply});
+      } else {
+        crmAiRemoveTyping();
+        if(!res.ok){const err=await res.json().catch(()=>({error:'Error'}));crmAiAddBot('Error: '+(err.error||res.statusText),true);}
+        else{const data=await res.json();const reply=data.choices?.[0]?.message?.content||'';crmAiHistory.push({role:'assistant',content:reply});crmAiAddBot(reply,reply.startsWith('##REFUSED##'));}
+      }
+    } catch(e){crmAiRemoveTyping();crmAiAddBot('Cannot reach AI backend: '+e.message,true);}
+    crmAiLoading=false;
+    document.getElementById('crm-ai-send-btn').disabled=false;
+    document.getElementById('crm-ai-model-status').textContent='Ready';
+  };
+  // Hide FAB when on AI tab
+  document.addEventListener('click',function(e){
+    const btn=e.target.closest('.tnav');
+    if(!btn) return;
+    const fab=document.getElementById('crm-ai-fab');
+    if(fab) fab.style.display=btn.dataset.tab==='ai-assistant'?'none':'flex';
+  });
+  window._crmAiSelectModel = window.crmAiSelectModel;
+})();
+
+window.markPermChange = function(el) {
+  const key = el.dataset.role + '|' + el.dataset.perm;
+  const original = window._permGranted?.has(key);
+  if (el.checked !== original) {
+    window._permPending[key] = el.checked;
+    el.style.outline = '2px solid #F7A800';
+  } else {
+    delete window._permPending[key];
+    el.style.outline = '';
+  }
+  const count = Object.keys(window._permPending||{}).length;
+  const btn = document.getElementById('permSaveBtn');
+  if (btn) btn.textContent = count > 0 ? '💾 Save Changes ('+count+')' : '💾 Save Changes';
+};
+
+window.savePermissions = async function() {
+  const pending = window._permPending || {};
+  const entries = Object.entries(pending);
+  if (!entries.length) { 
+    const s = document.getElementById('permSaveStatus');
+    if(s){s.textContent='No changes to save.';s.style.color='#8899BB';}
+    return; 
+  }
+  const btn = document.getElementById('permSaveBtn');
+  const status = document.getElementById('permSaveStatus');
+  if(btn){btn.disabled=true;btn.textContent='Saving...';}
+  if(status){status.textContent='';status.style.color='';}
+  let saved=0, failed=0;
+  for (const [key, granted] of entries) {
+    const [role_id, permission_id] = key.split('|');
+    const r = await apiFetch('/admin/permissions/toggle', {
+      method:'POST', body:JSON.stringify({role_id, permission_id, granted})
+    });
+    if (r && r.ok) {
+      saved++;
+      if (granted) window._permGranted.add(key);
+      else window._permGranted.delete(key);
+      // Clear highlight
+      const el = document.querySelector('input[data-role="'+role_id+'"][data-perm="'+permission_id+'"]');
+      if(el) el.style.outline='2px solid '+(granted?'#22c55e':'#ef4444');
+      setTimeout(()=>{
+        const el2 = document.querySelector('input[data-role="'+role_id+'"][data-perm="'+permission_id+'"]');
+        if(el2) el2.style.outline='';
+      }, 1500);
+    } else { failed++; }
+  }
+  window._permPending = {};
+  if(btn){btn.disabled=false;btn.textContent='💾 Save Changes';}
+  if(status){
+    if(failed===0){status.textContent='✓ '+saved+' permission'+(saved>1?'s':'')+' saved successfully.';status.style.color='#22c55e';}
+    else{status.textContent='⚠ '+saved+' saved, '+failed+' failed.';status.style.color='#EF4444';}
+    setTimeout(()=>{if(status)status.textContent='';},3000);
+  }
 };

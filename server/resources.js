@@ -114,3 +114,65 @@ router.use('/tickets', makeRouter('tickets', 'tickets.read', 'tickets.create', '
 ]));
 
 module.exports = router;
+
+// ── Permission Matrix API ─────────────────────────────────────────────────────
+router.get('/admin/permissions', authenticate, async (req, res) => {
+  try {
+    const roles = await query('SELECT * FROM roles ORDER BY id');
+    const perms = await query('SELECT * FROM permissions ORDER BY key');
+    const matrix = await query('SELECT * FROM role_permissions');
+    res.json({ roles: roles.rows, permissions: perms.rows, matrix: matrix.rows });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/admin/permissions/toggle', authenticate, async (req, res) => {
+  try {
+    const { role_id, permission_id, granted } = req.body;
+    if (!role_id || !permission_id) return res.status(400).json({ error: 'role_id and permission_id required' });
+    if (granted) {
+      await query('INSERT INTO role_permissions(role_id, permission_id) VALUES($1,$2) ON CONFLICT DO NOTHING', [role_id, permission_id]);
+    } else {
+      await query('DELETE FROM role_permissions WHERE role_id=$1 AND permission_id=$2', [role_id, permission_id]);
+    }
+    res.json({ ok: true, role_id, permission_id, granted });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Projects API ──────────────────────────────────────────────────────────────
+router.get('/projects', authenticate, async (req, res) => {
+  try {
+    const { rows } = await query('SELECT * FROM projects ORDER BY updated_at DESC');
+    res.json(rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/projects', authenticate, async (req, res) => {
+  try {
+    const { name, description, status='planning', priority='medium', start_date, end_date, budget, tags } = req.body;
+    if (!name) return res.status(400).json({ error: 'name required' });
+    const { rows: [project] } = await query(
+      'INSERT INTO projects(name,description,status,priority,start_date,end_date,budget,tags,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',
+      [name, description, status, priority, start_date||null, end_date||null, budget||null, tags||[], req.user?.id]
+    );
+    res.status(201).json(project);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.put('/projects/:id', authenticate, async (req, res) => {
+  try {
+    const { name, description, status, priority, start_date, end_date, budget, tags } = req.body;
+    const { rows: [p] } = await query(
+      'UPDATE projects SET name=$1,description=$2,status=$3,priority=$4,start_date=$5,end_date=$6,budget=$7,tags=$8,updated_at=NOW() WHERE id=$9 RETURNING *',
+      [name, description, status, priority, start_date||null, end_date||null, budget||null, tags||[], req.params.id]
+    );
+    if (!p) return res.status(404).json({ error: 'Not found' });
+    res.json(p);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.delete('/projects/:id', authenticate, async (req, res) => {
+  try {
+    await query('DELETE FROM projects WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});

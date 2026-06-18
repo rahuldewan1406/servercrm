@@ -122,6 +122,9 @@
 
           <p id="loginStatus" class="login-error"></p>
 
+          <div style="text-align:right;margin:-8px 0 12px">
+            <a href="#" onclick="showForgotPassword()" style="font-size:.78rem;color:#1E3A6E;text-decoration:none">Forgot password?</a>
+          </div>
           <button type="submit" class="login-submit-btn" id="loginSubmitBtn">
             <span id="loginBtnText">Sign In to CRM</span>
             <span id="loginBtnSpinner" class="login-spinner hidden"></span>
@@ -130,10 +133,7 @@
         </form>
 
         <div class="login-form-footer">
-          <div class="login-credentials-hint">
-            <span class="hint-label">Demo credentials</span>
-            <code>admin@crm.local</code> / <code>admin123</code>
-          </div>
+
           <div class="login-api-status" id="loginApiStatus">
             <span class="api-dot" id="loginApiDot"></span>
             <span id="loginApiText">Checking API…</span>
@@ -170,6 +170,11 @@
     </nav>
     <div class="topbar-user">
       <span id="smtpDot" class="status-dot" title="SMTP Status"></span>
+      <!-- AI Assistant button -->
+      <button class="notif-bell ai-topbar-btn" onclick="switchTab('ai-assistant')" title="AI Assistant" style="position:relative;font-size:1.1rem">
+        🤖
+        <span style="position:absolute;top:2px;right:2px;width:7px;height:7px;border-radius:50%;background:#4ADE80;border:1.5px solid var(--nav-bg)"></span>
+      </button>
       <!-- Chat messenger button -->
       <div class="chat-bell-wrap" id="chatBellWrap" style="display:none">
         <button class="notif-bell" id="chatToggleBtn" onclick="toggleChat()" title="Messages">
@@ -374,7 +379,7 @@
           <button class="btn-primary-sm" onclick="openModal('projectModal')">+ New Project</button>
           <button class="btn-secondary-sm" onclick="openModal('milestoneModal')">+ Milestone</button>
           <button class="btn-secondary-sm" onclick="openModal('taskModal')">+ Task</button>
-          <button class="btn-secondary-sm" style="background:#0052cc;color:#fff;border-color:#0052cc" onclick="openModal('jiraConfigModal')">🔗 Jira Sync</button>
+          <button class="btn-secondary-sm" style="background:#0052cc;color:#fff;border-color:#0052cc" onclick="syncProjectDropdowns();openModal('jiraConfigModal')">🔗 Jira Sync</button>
           <button class="btn-ghost-sm" onclick="openModal('activityModal')">+ Log Activity</button>
           <button class="btn-secondary-sm" style="background:#6554c0;color:#fff;border-color:#6554c0" onclick="openJiraReport()">📊 Jira Report</button>
         </div>
@@ -1964,5 +1969,190 @@
 
   <script src="app.js"></script>
   <script src="chat-real.js"></script>
+
+  <!-- ── AI Assistant Panel ── -->
+  <div id="ai-assistant" class="page" style="height:calc(100vh - 56px);flex-direction:column;padding:0;background:#F4F6FB">
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 24px;background:#1E3A6E;flex-shrink:0">
+      <div style="width:32px;height:32px;background:#F7A800;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#122548">DIC</div>
+      <div>
+        <div style="font-size:14px;font-weight:600;color:#fff">DIC Secure AI Assistant</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.45)">4 local models · fully offline · guardrails active</div>
+      </div>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:10px;font-weight:500;background:rgba(34,197,94,0.12);color:#86EFAC;border:1px solid rgba(34,197,94,0.2);padding:3px 10px;border-radius:20px">
+        <div style="width:5px;height:5px;border-radius:50%;background:#4ADE80;animation:crm-ai-pulse 2s infinite"></div>
+        Guardrails on
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;padding:8px 24px;background:#122548;flex-shrink:0;flex-wrap:wrap;align-items:center">
+      <span style="font-size:10px;color:rgba(255,255,255,0.3);margin-right:4px">MODEL:</span>
+      <button class="crm-ai-model-btn active" data-model="llama3.2:1b" onclick="crmAiSelectModel(this)">🦙 Llama 3.2 1B <span class="crm-ai-tag crm-ai-tag-fast">⚡6s</span></button>
+      <button class="crm-ai-model-btn" data-model="phi4-mini" onclick="crmAiSelectModel(this)">🔬 Phi4 Mini <span class="crm-ai-tag crm-ai-tag-fast">⚡6s</span></button>
+      <button class="crm-ai-model-btn" data-model="qwen2.5:1.5b" onclick="crmAiSelectModel(this)">⚡ Qwen2.5 1.5B <span class="crm-ai-tag crm-ai-tag-fast">12s</span></button>
+      <button class="crm-ai-model-btn" data-model="llama3.1:8b" onclick="crmAiSelectModel(this)">🦙 Llama 3.1 8B <span class="crm-ai-tag crm-ai-tag-free">quality</span></button>
+      <button class="crm-ai-model-btn" data-model="mistral:7b" onclick="crmAiSelectModel(this)">🌊 Mistral 7B <span class="crm-ai-tag crm-ai-tag-free">free</span></button>
+      <button class="crm-ai-model-btn" data-model="qwen3:8b" onclick="crmAiSelectModel(this)">⚡ Qwen3 8B <span class="crm-ai-tag crm-ai-tag-code">code</span></button>
+      <button class="crm-ai-model-btn" data-model="gemma:7b" onclick="crmAiSelectModel(this)">💎 Gemma 7B <span class="crm-ai-tag crm-ai-tag-free">free</span></button>
+      <div style="margin-left:auto;font-size:10px;color:rgba(255,255,255,0.25)" id="crm-ai-model-status">Ready</div>
+    </div>
+    <div id="crm-ai-messages" style="flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:12px">
+      <div style="align-self:center;font-size:11px;color:#8899BB;padding:3px 14px;border:1px dashed #D0DAF0;border-radius:20px">Session started · all models running locally on EC2 · no data leaves VPC</div>
+      <div style="align-self:flex-start;max-width:78%;background:#F4F6FB;border:1px solid #D0DAF0;border-radius:14px 14px 14px 4px;padding:10px 14px;font-size:13.5px;line-height:1.7;color:#1A1F2E">
+        Hello! I am your secure AI assistant integrated into the NHAI CRM. I can help with project analysis, report drafting, code queries, and more — all running locally. What would you like to explore?
+        <div style="font-size:10px;color:#8899BB;margin-top:4px">🦙 Llama 3.2 1B</div>
+      </div>
+    </div>
+    <div id="crm-ai-chips" style="display:flex;gap:7px;padding:0 24px 10px;flex-wrap:wrap">
+      <div class="crm-ai-chip" onclick="crmAiUsePrompt('Summarize the key NHAI project KPIs I should track')">NHAI KPIs</div>
+      <div class="crm-ai-chip" onclick="crmAiUsePrompt('Draft a project status update email for a highway project')">Draft status email</div>
+      <div class="crm-ai-chip" onclick="crmAiUsePrompt('Write a Python script to export CRM data to Excel')">Export to Excel</div>
+      <div class="crm-ai-chip" onclick="crmAiUsePrompt('NHAI project status report kaise banayein?')">Hindi: Status report</div>
+      <div class="crm-ai-chip" onclick="crmAiUsePrompt('Write a SQL query to find all overdue support tickets')">SQL: Overdue tickets</div>
+    </div>
+    <div style="padding:12px 24px 16px;border-top:1px solid #D0DAF0;background:#fff;flex-shrink:0">
+      <div style="display:flex;align-items:flex-end;gap:9px;border:1.5px solid #B8C8E8;border-radius:14px;padding:9px 13px;background:#fff" id="crm-ai-input-wrap">
+        <textarea id="crm-ai-input" rows="1"
+          placeholder="Ask anything... (Enter to send, Shift+Enter for new line)"
+          style="flex:1;border:none;outline:none;resize:none;font-family:inherit;font-size:13.5px;color:#1A1F2E;line-height:1.6;background:transparent;max-height:120px;min-height:20px"
+          oninput="crmAiAutoResize(this)" onkeydown="crmAiHandleKey(event)"></textarea>
+        <button onclick="crmAiSend()" id="crm-ai-send-btn"
+          style="width:32px;height:32px;border-radius:8px;border:none;background:#1E3A6E;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:5px;padding:0 2px">
+        <span style="font-size:10px;color:#8899BB">Model: <strong id="crm-ai-footer-model">Llama 3.2 1B</strong> · running locally on EC2</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- FAB -->
+  <div id="crm-ai-fab"
+    onclick="switchTab('ai-assistant')"
+    style="position:fixed;bottom:130px;right:20px;width:44px;height:44px;border-radius:50%;background:#1E3A6E;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 20px rgba(30,58,110,0.35);z-index:9999;font-size:20px;transition:transform .2s"
+    onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'">
+    🤖
+    <div style="position:absolute;top:3px;right:3px;width:11px;height:11px;border-radius:50%;background:#4ADE80;border:2px solid #1E3A6E;pointer-events:none"></div>
+  </div>
+
+  <!-- Inline stubs -->
+  <script>
+  function crmAiHandleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(window.crmAiSendFn)window.crmAiSendFn();}}
+  function crmAiAutoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,120)+'px';}
+  function crmAiSend(){if(window.crmAiSendFn)window.crmAiSendFn();}
+  function crmAiSelectModel(btn){
+    document.querySelectorAll('.crm-ai-model-btn').forEach(function(b){b.classList.remove('active');});
+    btn.classList.add('active');
+    var model=btn.dataset.model;
+    var label=btn.textContent.replace(/fast|free|code|quality|\u26a1\d+s/gi,'').trim();
+    var f=document.getElementById('crm-ai-footer-model');
+    if(f) f.textContent=label;
+    if(window.__crmAiOnModelSelect) window.__crmAiOnModelSelect(model,label);
+  }
+  function crmAiUsePrompt(text){var ta=document.getElementById('crm-ai-input');if(ta){ta.value=text;crmAiAutoResize(ta);ta.focus();}}
+  </script>
+
+
+  <!-- Forgot Password Modal -->
+  <div id="forgotPasswordModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99999;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:12px;padding:28px;width:90%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,0.2)">
+      <div id="forgotStep1">
+        <h3 style="margin:0 0 6px;color:#1A1F2E;font-size:16px">Reset Password</h3>
+        <p style="color:#4A5568;font-size:13px;margin:0 0 18px">Enter your email and we will send you a reset link.</p>
+        <input id="forgotEmail" type="email" placeholder="your@nhai.gov.in"
+          style="width:100%;padding:10px 12px;border:1.5px solid #D0DAF0;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:10px"/>
+        <div id="forgotStatus" style="font-size:12px;min-height:18px;margin-bottom:10px"></div>
+        <div style="display:flex;gap:10px">
+          <button onclick="closeForgotPassword()" style="flex:1;padding:10px;border:1.5px solid #D0DAF0;background:#fff;border-radius:8px;cursor:pointer;font-size:13px">Cancel</button>
+          <button onclick="submitForgotPassword()" id="forgotSubmitBtn" style="flex:1;padding:10px;background:#1E3A6E;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600">Send Reset Link</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reset Password Modal (shown when ?reset=token in URL) -->
+  <div id="resetPasswordModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99999;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:12px;padding:28px;width:90%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,0.2)">
+      <h3 style="margin:0 0 6px;color:#1A1F2E;font-size:16px">Set New Password</h3>
+      <p style="color:#4A5568;font-size:13px;margin:0 0 18px">Enter your new password below.</p>
+      <input id="resetNewPassword" type="password" placeholder="New password (min 6 chars)"
+        style="width:100%;padding:10px 12px;border:1.5px solid #D0DAF0;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:10px"/>
+      <input id="resetConfirmPassword" type="password" placeholder="Confirm new password"
+        style="width:100%;padding:10px 12px;border:1.5px solid #D0DAF0;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:10px"/>
+      <div id="resetStatus" style="font-size:12px;min-height:18px;margin-bottom:10px"></div>
+      <button onclick="submitResetPassword()" id="resetSubmitBtn" style="width:100%;padding:11px;background:#1E3A6E;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600">Update Password</button>
+    </div>
+  </div>
+
+  <script>
+  const API_BASE = window.location.origin + '/api';
+
+  function showForgotPassword() {
+    const m = document.getElementById('forgotPasswordModal');
+    if(m){ m.style.display='flex'; document.getElementById('forgotEmail').focus(); }
+  }
+  function closeForgotPassword() {
+    const m = document.getElementById('forgotPasswordModal');
+    if(m){ m.style.display='none'; }
+    document.getElementById('forgotStatus').textContent='';
+    document.getElementById('forgotEmail').value='';
+  }
+  async function submitForgotPassword() {
+    const email = document.getElementById('forgotEmail').value.trim();
+    const status = document.getElementById('forgotStatus');
+    const btn = document.getElementById('forgotSubmitBtn');
+    if (!email) { status.textContent='Please enter your email.'; status.style.color='#EF4444'; return; }
+    btn.disabled=true; btn.textContent='Sending...';
+    status.textContent=''; 
+    try {
+      const r = await fetch(API_BASE+'/auth/forgot-password', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({email})
+      });
+      const d = await r.json();
+      status.textContent = d.message;
+      status.style.color = r.ok ? '#22c55e' : '#EF4444';
+      if(r.ok) setTimeout(closeForgotPassword, 3000);
+    } catch(e) { status.textContent='Network error. Try again.'; status.style.color='#EF4444'; }
+    btn.disabled=false; btn.textContent='Send Reset Link';
+  }
+
+  async function submitResetPassword() {
+    const pass = document.getElementById('resetNewPassword').value;
+    const conf = document.getElementById('resetConfirmPassword').value;
+    const status = document.getElementById('resetStatus');
+    const btn = document.getElementById('resetSubmitBtn');
+    if (pass.length < 6) { status.textContent='Password must be at least 6 characters.'; status.style.color='#EF4444'; return; }
+    if (pass !== conf) { status.textContent='Passwords do not match.'; status.style.color='#EF4444'; return; }
+    const token = new URLSearchParams(window.location.search).get('reset');
+    if (!token) { status.textContent='Invalid reset link.'; status.style.color='#EF4444'; return; }
+    btn.disabled=true; btn.textContent='Updating...';
+    try {
+      const r = await fetch(API_BASE+'/auth/reset-password', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({token, password:pass})
+      });
+      const d = await r.json();
+      status.textContent = d.message;
+      status.style.color = r.ok ? '#22c55e' : '#EF4444';
+      if(r.ok) {
+        setTimeout(()=>{
+          document.getElementById('resetPasswordModal').style.display='none';
+          window.history.replaceState({}, '', '/CRM/');
+        }, 2000);
+      }
+    } catch(e) { status.textContent='Network error.'; status.style.color='#EF4444'; }
+    btn.disabled=false; btn.textContent='Update Password';
+  }
+
+  // Auto-show reset modal if ?reset= in URL
+  window.addEventListener('DOMContentLoaded', function() {
+    const token = new URLSearchParams(window.location.search).get('reset');
+    if (token) {
+      const m = document.getElementById('resetPasswordModal');
+      if(m) m.style.display='flex';
+    }
+  });
+  </script>
+
 </body>
 </html>
