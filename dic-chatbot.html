@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>DIC Secure AI — Government AI Assistant</title>
+<style>
+  :root {
+    --navy:    #0F2044;
+    --navy2:   #1A3460;
+    --gold:    #F7A800;
+    --gold2:   #FFD166;
+    --green:   #4ADE80;
+    --bg:      #F0F4FA;
+    --surface: #FFFFFF;
+    --border:  #D0DCEF;
+    --text:    #1A2340;
+    --text2:   #4A5878;
+    --text3:   #8A9BB8;
+    --user-bg: #1A3460;
+    --bot-bg:  #FFFFFF;
+    --danger:  #FEE2E2;
+    --danger-t:#991B1B;
+    --r:       14px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: var(--navy);
+    padding: 0 20px;
+    height: 58px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+    border-bottom: 2px solid var(--gold);
+    box-shadow: 0 2px 16px rgba(0,0,0,0.25);
+  }
+  .header-logo {
+    width: 36px; height: 36px;
+    background: var(--gold);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 800; color: var(--navy);
+    flex-shrink: 0;
+    letter-spacing: -0.5px;
+  }
+  .header-info { flex: 1; }
+  .header-title {
+    font-size: 15px; font-weight: 700; color: #fff;
+    letter-spacing: -0.3px;
+  }
+  .header-sub {
+    font-size: 11px; color: rgba(255,255,255,0.45);
+    margin-top: 1px;
+  }
+  .header-status {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 600;
+    color: var(--green);
+    background: rgba(74,222,128,0.1);
+    border: 1px solid rgba(74,222,128,0.25);
+    padding: 4px 10px; border-radius: 20px;
+  }
+  .status-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* ── Model bar ── */
+  .model-bar {
+    background: var(--navy2);
+    padding: 8px 20px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .model-label {
+    font-size: 10px; color: rgba(255,255,255,0.3);
+    font-weight: 600; letter-spacing: 0.5px;
+    margin-right: 4px; text-transform: uppercase;
+  }
+  .model-btn {
+    display: flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.05);
+    color: rgba(255,255,255,0.5);
+    font-size: 11.5px; font-weight: 500;
+    cursor: pointer; transition: all .14s;
+    white-space: nowrap;
+  }
+  .model-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+  .model-btn.active {
+    background: rgba(247,168,0,0.15);
+    border-color: rgba(247,168,0,0.4);
+    color: #fff;
+  }
+  .model-tag {
+    font-size: 9px; font-weight: 700;
+    padding: 1px 5px; border-radius: 3px;
+  }
+  .tag-fast { background: rgba(96,165,250,0.2); color: #60A5FA; }
+  .tag-free { background: rgba(74,222,128,0.2); color: #4ADE80; }
+  .tag-code { background: rgba(192,132,252,0.2); color: #C084FC; }
+  .model-status {
+    margin-left: auto;
+    font-size: 10px; color: rgba(255,255,255,0.25);
+    font-style: italic;
+  }
+
+  /* ── Messages ── */
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    scroll-behavior: smooth;
+  }
+  .messages::-webkit-scrollbar { width: 4px; }
+  .messages::-webkit-scrollbar-track { background: transparent; }
+  .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .sys-msg {
+    align-self: center;
+    font-size: 11px; color: var(--text3);
+    padding: 3px 14px;
+    border: 1px dashed var(--border);
+    border-radius: 20px;
+    background: rgba(255,255,255,0.6);
+  }
+
+  .msg-row { display: flex; flex-direction: column; max-width: 76%; }
+  .msg-row.user { align-self: flex-end; align-items: flex-end; }
+  .msg-row.bot  { align-self: flex-start; align-items: flex-start; }
+
+  .bubble {
+    padding: 11px 15px;
+    border-radius: var(--r);
+    font-size: 14px; line-height: 1.65;
+    word-break: break-word;
+  }
+  .bubble.user {
+    background: var(--user-bg);
+    color: #fff;
+    border-radius: var(--r) var(--r) 4px var(--r);
+    box-shadow: 0 2px 8px rgba(26,52,96,0.3);
+  }
+  .bubble.bot {
+    background: var(--bot-bg);
+    color: var(--text);
+    border-radius: var(--r) var(--r) var(--r) 4px;
+    border: 1px solid var(--border);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .bubble.blocked {
+    background: var(--danger);
+    color: var(--danger-t);
+    border: 1px solid #FECACA;
+    border-radius: var(--r) var(--r) var(--r) 4px;
+  }
+  .bubble.bot pre {
+    background: #F0F4FA;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    margin: 8px 0;
+    font-size: 12.5px;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+  }
+  .bubble.bot code {
+    background: rgba(15,32,68,0.07);
+    padding: 1px 5px; border-radius: 3px;
+    font-size: 12.5px;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+  }
+  .bubble.bot p { margin-bottom: 6px; }
+  .bubble.bot p:last-child { margin-bottom: 0; }
+
+  .meta {
+    font-size: 10px; color: var(--text3);
+    margin-top: 4px; padding: 0 4px;
+  }
+
+  /* Typing indicator */
+  .typing {
+    display: flex; gap: 4px; align-items: center;
+    padding: 11px 15px;
+    background: var(--bot-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r) var(--r) var(--r) 4px;
+    align-self: flex-start;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--text3);
+    animation: bounce 1.3s infinite;
+  }
+  .dot:nth-child(2){animation-delay:.2s}
+  .dot:nth-child(3){animation-delay:.4s}
+  @keyframes bounce {
+    0%,80%,100%{transform:translateY(0);opacity:.4}
+    40%{transform:translateY(-5px);opacity:1}
+  }
+
+  /* ── Chips ── */
+  .chips {
+    padding: 0 20px 10px;
+    display: flex; gap: 7px; flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+  .chip {
+    padding: 5px 13px;
+    border-radius: 20px;
+    font-size: 12px;
+    border: 1px solid var(--border);
+    color: var(--text2);
+    cursor: pointer;
+    background: var(--surface);
+    transition: all .14s;
+    white-space: nowrap;
+  }
+  .chip:hover {
+    background: #EAF0FA;
+    border-color: var(--navy2);
+    color: var(--navy);
+  }
+
+  /* ── Input area ── */
+  .input-area {
+    padding: 12px 20px 16px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.04);
+  }
+  .input-wrap {
+    display: flex; align-items: flex-end; gap: 10px;
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    padding: 10px 14px;
+    background: var(--surface);
+    transition: border-color .15s;
+  }
+  .input-wrap:focus-within {
+    border-color: var(--navy2);
+    box-shadow: 0 0 0 3px rgba(26,52,96,0.08);
+  }
+  textarea {
+    flex: 1; border: none; outline: none; resize: none;
+    font-family: inherit; font-size: 14px;
+    color: var(--text); line-height: 1.6;
+    background: transparent;
+    max-height: 140px; min-height: 22px;
+  }
+  textarea::placeholder { color: var(--text3); }
+  .send-btn {
+    width: 34px; height: 34px; border-radius: 10px;
+    border: none; background: var(--navy);
+    color: #fff; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; transition: all .14s;
+  }
+  .send-btn:hover { background: var(--navy2); transform: scale(1.05); }
+  .send-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+  .input-footer {
+    display: flex; justify-content: space-between;
+    margin-top: 6px; padding: 0 2px;
+    font-size: 10px; color: var(--text3);
+  }
+  .char-count { color: var(--text3); }
+  .char-count.warn { color: #F59E0B; }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    .model-bar { gap: 4px; padding: 7px 14px; }
+    .messages { padding: 14px; }
+    .msg-row { max-width: 88%; }
+    .chips { padding: 0 14px 8px; }
+    .input-area { padding: 10px 14px 14px; }
+    .header { padding: 0 14px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-logo">DIC</div>
+  <div class="header-info">
+    <div class="header-title">DIC Secure AI Assistant</div>
+    <div class="header-sub">Digital India Corporation · NHAI Infrastructure</div>
+  </div>
+  <div class="header-status">
+    <div class="status-dot"></div>
+    <span>Offline · VPC</span>
+  </div>
+</div>
+
+<!-- Model selector -->
+<div class="model-bar">
+  <span class="model-label">Model</span>
+  <button class="model-btn active" data-model="llama3.2:1b" onclick="selectModel(this)">🦙 Llama 3.2 1B <span class="model-tag tag-fast">⚡6s</span></button>
+  <button class="model-btn" data-model="phi4-mini" onclick="selectModel(this)">🔬 Phi4 Mini <span class="model-tag tag-fast">⚡6s</span></button>
+  <button class="model-btn" data-model="qwen2.5:1.5b" onclick="selectModel(this)">⚡ Qwen2.5 1.5B <span class="model-tag tag-fast">12s</span></button>
+  <button class="model-btn" data-model="llama3.1:8b" onclick="selectModel(this)">🦙 Llama 3.1 8B <span class="model-tag tag-free">quality</span></button>
+  <button class="model-btn" data-model="mistral:7b" onclick="selectModel(this)">🌊 Mistral 7B <span class="model-tag tag-free">free</span></button>
+  <button class="model-btn" data-model="qwen3:8b" onclick="selectModel(this)">⚡ Qwen3 8B <span class="model-tag tag-code">code</span></button>
+  <button class="model-btn" data-model="gemma:7b" onclick="selectModel(this)">💎 Gemma 7B <span class="model-tag tag-free">free</span></button>
+  <span class="model-status" id="modelStatus">Ready</span>
+</div>
+
+<!-- Messages -->
+<div class="messages" id="messages">
+  <div class="sys-msg">Session started · all models running locally on EC2 · no data leaves VPC</div>
+  <div class="msg-row bot">
+    <div class="bubble bot">Hello! I'm your secure AI assistant for Digital India Corporation. I can help with project analysis, report drafting, code queries, and more — all running locally on EC2. What would you like to explore?</div>
+    <div class="meta">🦙 Llama 3.2 1B</div>
+  </div>
+</div>
+
+<!-- Quick chips -->
+<div class="chips" id="chips">
+  <div class="chip" onclick="useChip(this)">NHAI project KPIs</div>
+  <div class="chip" onclick="useChip(this)">Draft status email</div>
+  <div class="chip" onclick="useChip(this)">Export data to Excel</div>
+  <div class="chip" onclick="useChip(this)">SQL: overdue tickets</div>
+  <div class="chip" onclick="useChip(this)">Hindi: status report</div>
+</div>
+
+<!-- Input -->
+<div class="input-area">
+  <div class="input-wrap">
+    <textarea id="input" rows="1" placeholder="Ask anything… (Enter to send, Shift+Enter for new line)"
+      oninput="autoResize(this); updateCharCount(this)"
+      onkeydown="handleKey(event)"></textarea>
+    <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+      </svg>
+    </button>
+  </div>
+  <div class="input-footer">
+    <span id="modelFooter">Model: <strong>Llama 3.2 1B</strong> · running locally on EC2</span>
+    <span class="char-count" id="charCount"></span>
+  </div>
+</div>
+
+<script>
+const API = '/codescan/dic-ai/chat';
+const GUARD = [
+  /\b(password|passwd|api[_\s-]?key|secret\b|access[_\s-]?token)\b/i,
+  /\b(porn|xxx|nude|naked|adult\s+content)\b/i,
+  /\b(aadhaar\s+number|pan\s+card\s+number|bank\s+account\s+number)\b/i,
+  /\b(make\s+a?\s*bomb|synthesize\s+drug|hack\s+into|write\s+malware)\b/i,
+];
+
+let model = 'llama3.2:1b';
+let modelLabel = 'Llama 3.2 1B';
+let history = [];
+let loading = false;
+
+function selectModel(btn) {
+  document.querySelectorAll('.model-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  model = btn.dataset.model;
+  modelLabel = btn.textContent.replace(/fast|free|code|quality|[⚡🔬]\d+s/gi, '').trim();
+  history = [];
+  document.getElementById('modelFooter').innerHTML = `Model: <strong>${modelLabel}</strong> · running locally on EC2`;
+  addSys(`Switched to ${modelLabel} · conversation reset`);
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+}
+
+function updateCharCount(el) {
+  const n = el.value.length;
+  const el2 = document.getElementById('charCount');
+  el2.textContent = n > 200 ? n + ' chars' : '';
+  el2.className = 'char-count' + (n > 500 ? ' warn' : '');
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
+function useChip(el) {
+  document.getElementById('chips').style.display = 'none';
+  const inp = document.getElementById('input');
+  inp.value = el.textContent;
+  autoResize(inp);
+  sendMessage();
+}
+
+function scrollBot() {
+  const m = document.getElementById('messages');
+  m.scrollTop = m.scrollHeight;
+}
+
+function addSys(text) {
+  const m = document.getElementById('messages');
+  const d = document.createElement('div');
+  d.className = 'sys-msg'; d.textContent = text;
+  m.appendChild(d); scrollBot();
+}
+
+function addUser(text) {
+  document.getElementById('chips').style.display = 'none';
+  const m = document.getElementById('messages');
+  const row = document.createElement('div');
+  row.className = 'msg-row user';
+  row.innerHTML = `<div class="bubble user">${esc(text)}</div><div class="meta">You</div>`;
+  m.appendChild(row); scrollBot();
+}
+
+function addBot(text, blocked) {
+  const m = document.getElementById('messages');
+  const row = document.createElement('div');
+  row.className = 'msg-row bot';
+  const cls = blocked ? 'bubble blocked' : 'bubble bot';
+  row.innerHTML = `<div class="${cls}">${blocked ? esc(text) : render(text)}</div><div class="meta">${modelLabel}</div>`;
+  m.appendChild(row); scrollBot();
+}
+
+function showTyping() {
+  const m = document.getElementById('messages');
+  const d = document.createElement('div');
+  d.id = 'typing'; d.className = 'msg-row bot';
+  d.innerHTML = '<div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
+  m.appendChild(d); scrollBot();
+}
+function removeTyping() { document.getElementById('typing')?.remove(); }
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function render(raw) {
+  let s = esc(raw);
+  s = s.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, l, c) => `<pre><code>${esc(c.trim())}</code></pre>`);
+  s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  s = s.split(/\n\n+/).map(p => p.trim() ? `<p>${p.replace(/\n/g, '<br>')}</p>` : '').join('');
+  return s || esc(raw);
+}
+
+async function sendMessage() {
+  if (loading) return;
+  const inp = document.getElementById('input');
+  const text = inp.value.trim();
+  if (!text) return;
+
+  if (GUARD.some(p => p.test(text))) {
+    addUser(text); inp.value = ''; autoResize(inp);
+    addBot('[BLOCKED] This request was stopped by content guardrails.', true);
+    return;
+  }
+
+  addUser(text);
+  inp.value = ''; autoResize(inp);
+  updateCharCount(inp);
+  history.push({ role: 'user', content: text });
+
+  loading = true;
+  document.getElementById('sendBtn').disabled = true;
+  document.getElementById('modelStatus').textContent = 'Thinking…';
+  showTyping();
+
+  try {
+    const res = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages: history })
+    });
+
+    const ct = res.headers.get('content-type') || '';
+
+    if (ct.includes('text/event-stream')) {
+      removeTyping();
+      const m = document.getElementById('messages');
+      const row = document.createElement('div');
+      row.className = 'msg-row bot';
+      row.innerHTML = '<div class="bubble bot" id="stream-bub"></div><div class="meta">' + modelLabel + '</div>';
+      m.appendChild(row);
+      const bub = document.getElementById('stream-bub');
+      bub.removeAttribute('id');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let full = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const lines = decoder.decode(value).split('\n').filter(l => l.startsWith('data: '));
+        for (const line of lines) {
+          const data = line.slice(6);
+          if (data === '[DONE]') continue;
+          try {
+            const j = JSON.parse(data);
+            if (j.token) { full += j.token; bub.innerHTML = render(full); scrollBot(); }
+            if (j.error) { bub.innerHTML = '<em style="color:red">Error: ' + esc(j.error) + '</em>'; }
+          } catch {}
+        }
+      }
+      history.push({ role: 'assistant', content: full });
+
+    } else {
+      removeTyping();
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Backend error' }));
+        addBot('Error: ' + (err.error || res.statusText), true);
+      } else {
+        const data = await res.json();
+        const reply = data.choices?.[0]?.message?.content || '';
+        history.push({ role: 'assistant', content: reply });
+        addBot(reply, reply.startsWith('[BLOCKED]'));
+      }
+    }
+  } catch (e) {
+    removeTyping();
+    addBot('Cannot reach AI backend: ' + e.message, true);
+  }
+
+  loading = false;
+  document.getElementById('sendBtn').disabled = false;
+  document.getElementById('modelStatus').textContent = 'Ready';
+  inp.focus();
+}
+</script>
+</body>
+</html>

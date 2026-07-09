@@ -482,8 +482,8 @@ const PAGES = ['dashboard','customers','projects','support','email'];
 function switchTab(id) {
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.tnav').forEach(b=>b.classList.remove('active'));
-  q(id).classList.add('active');
-  document.querySelector(`.tnav[data-tab="${id}"]`).classList.add('active');
+  const _pg = q(id); if(_pg) _pg.classList.add('active');
+  const _tn = document.querySelector(`.tnav[data-tab="${id}"]`); if(_tn) _tn.classList.add('active');
   if (id==='projects') renderProjectViews();
   if (id==='reports')   renderReport();
   if (id==='documents') { syncDocDropdowns(); renderDocuments(); }
@@ -7272,9 +7272,11 @@ window.saveTicket = async function() {
   let crmAiHistory = [], crmAiLoading = false;
   // Register model select callback — called by inline stub in HTML
   window.__crmAiOnModelSelect = function(model, label) {
+    console.log('[AI] Model switching to:', model, 'from:', crmAiModel);
     crmAiModel = model;
     crmAiLabel = label;
     crmAiHistory = [];
+    console.log('[AI] crmAiModel is now:', crmAiModel);
     window.crmAiAddSys('Switched to ' + crmAiLabel + ' · conversation reset');
   };
   function crmAiEsc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
