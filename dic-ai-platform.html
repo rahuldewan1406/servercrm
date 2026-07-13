@@ -189,6 +189,8 @@ textarea::placeholder{color:var(--text3);}
   <button class="tab-btn" onclick="switchTab('meeting',this)">🎙️ Meeting Notes</button>
   <button class="tab-btn" onclick="switchTab('dashboard',this)">📊 Auto Dashboard</button>
   <button class="tab-btn" onclick="switchTab('datachat',this)">🗄️ Data Chat</button>
+  <button class="tab-btn" onclick="switchTab('rag',this)">📚 Doc Intelligence</button>
+  <button class="tab-btn" onclick="switchTab('report',this)">📝 Report Generator</button>
 </div>
 
 <!-- ════════ PANEL 1: CHAT ════════ -->
@@ -1031,8 +1033,7 @@ async function generateDashInsights(data) {
 
   try {
     const res = await fetch(CHAT_API, {method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'llama3.2:1b',messages:[{role:'user',content:`You are an NHAI data analyst. Analyze this dataset and provide 3-4 key insights in bullet points:
-${summary}`}]})});
+      body:JSON.stringify({model:'llama3.2:1b',messages:[{role:'user',content:'You are an NHAI data analyst. Analyze this dataset and provide 3-4 key insights in bullet points:\n'+summary}]})});
     const ct = res.headers.get('content-type')||'';
     let text='';
     if(ct.includes('text/event-stream')){
@@ -1188,6 +1189,334 @@ async function dcSend() {
     </div>
   </div>
 </div>
+
+
+<!-- PANEL: RAG DOCUMENT INTELLIGENCE -->
+<div class="panel" id="panel-rag">
+  <div style="display:flex;height:100%;overflow:hidden;">
+
+    <!-- Left: Document Library -->
+    <div style="width:280px;background:var(--navy);display:flex;flex-direction:column;flex-shrink:0;">
+      <div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.1);">
+        <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:10px;">📚 Document Library</div>
+        <div class="upload-zone" id="ragDropZone" onclick="document.getElementById('ragFile').click()"
+          ondrop="handleRagDrop(event)" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')"
+          style="padding:14px;background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.2);">
+          <div style="font-size:20px;text-align:center;">📄</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.6);text-align:center;margin-top:4px;">Upload document</div>
+          <div style="font-size:10px;color:rgba(255,255,255,0.3);text-align:center;">PDF, DOCX, XLSX, TXT, Images</div>
+          <input type="file" id="ragFile" accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.md,.png,.jpg,.jpeg" style="display:none" onchange="handleRagFile(this)"/>
+        </div>
+        <div id="ragUploadStatus" style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:8px;min-height:16px;"></div>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:10px;">
+        <div style="font-size:10px;color:rgba(255,255,255,0.3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px;">Indexed Documents</div>
+        <div id="ragDocList" style="display:flex;flex-direction:column;gap:6px;">
+          <div style="font-size:11px;color:rgba(255,255,255,0.3);font-style:italic;">No documents yet</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Chat -->
+    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+      <div style="background:var(--navy2);padding:8px 20px;font-size:11px;color:rgba(255,255,255,0.4);">
+        Ask questions about your uploaded documents · Powered by RAG + llama3.1:8b
+      </div>
+      <div class="messages" id="ragMessages">
+        <div class="sys-msg">Upload documents on the left, then ask questions here</div>
+        <div class="mrow bot">
+          <div class="bubble bot">
+            Hello! I can answer questions from your uploaded NHAI documents. Upload PDFs, Word docs, Excel files, or images and I will find the relevant information for you.<br><br>
+            Try questions like:<br>
+            • <em>"What are the key findings in this report?"</em><br>
+            • <em>"What is the project completion percentage?"</em><br>
+            • <em>"List all action items mentioned"</em>
+          </div>
+          <div class="meta">Doc Intelligence · RAG</div>
+        </div>
+      </div>
+      <div class="chips" id="ragChips">
+        <div class="chip" onclick="ragUseChip(this)">Summarize the document</div>
+        <div class="chip" onclick="ragUseChip(this)">What are the key findings?</div>
+        <div class="chip" onclick="ragUseChip(this)">List all action items</div>
+        <div class="chip" onclick="ragUseChip(this)">What are the risks mentioned?</div>
+      </div>
+      <div class="chat-input-area">
+        <div class="input-wrap">
+          <textarea id="ragInput" rows="1" placeholder="Ask anything about your documents…"
+            oninput="autoResize(this)" onkeydown="ragHandleKey(event)"></textarea>
+          <button class="send-btn" id="ragSendBtn" onclick="ragSend()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PANEL: REPORT GENERATOR -->
+<div class="panel" id="panel-report">
+  <div class="pptx-panel" style="display:flex;flex-direction:column;gap:16px;">
+    <div class="card">
+      <div class="section-title">📝 Auto Report Generator</div>
+      <div class="mode-tabs">
+        <div class="mode-tab active" onclick="setReportTemplate('weekly_status',this)">📅 Weekly Status</div>
+        <div class="mode-tab" onclick="setReportTemplate('mpr',this)">📊 MPR</div>
+        <div class="mode-tab" onclick="setReportTemplate('executive_summary',this)">👔 Executive Summary</div>
+        <div class="mode-tab" onclick="setReportTemplate('custom',this)">✏️ Custom</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-row" style="margin:0">
+          <label>Project / Topic</label>
+          <input id="reportProject" placeholder="e.g. NHAI DL3 Phase 2" value="NHAI Infrastructure Project"/>
+        </div>
+        <div class="form-row" style="margin:0">
+          <label>Period / Date</label>
+          <input id="reportPeriod" placeholder="e.g. Week 28, July 2026"/>
+        </div>
+      </div>
+      <div class="form-row" style="margin-top:12px">
+        <label>Data / Context <span style="font-weight:400;color:var(--text3)">(paste key data, metrics, or bullet points)</span></label>
+        <textarea id="reportData" rows="4" placeholder="• Project completion: 65%&#10;• Budget utilized: ₹45 Cr of ₹80 Cr&#10;• Key milestone: Foundation work completed&#10;• Issues: Delay in material supply from vendor X"></textarea>
+      </div>
+      <div class="form-row">
+        <label>Special Instructions <span style="font-weight:400;color:var(--text3)">(optional)</span></label>
+        <input id="reportInstructions" placeholder="e.g. Focus on financial aspects, include risk matrix, formal tone"/>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:4px;">
+        <button class="btn-primary" id="reportGenBtn" onclick="generateReport()"><span>⚡</span> Generate Report</button>
+        <button class="download-btn" id="reportDownloadBtn"><span>⬇</span> Download .docx</button>
+        <span id="reportStatus" style="font-size:12px;color:var(--text3);font-style:italic"></span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title">📋 Report Preview</div>
+      <div id="reportPreview" style="font-size:13px;line-height:1.8;color:var(--text2);min-height:100px;">
+        Fill in the details above and click Generate to create your report.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════
+// RAG DOCUMENT INTELLIGENCE
+// ════════════════════════════════════════════════════════
+const RAG_API    = '/codescan/dic-ai/rag';
+const REPORT_API = '/codescan/dic-ai/report';
+let ragLoading = false;
+let currentReportTemplate = 'weekly_status';
+
+function handleRagFile(input) {
+  const file = input.files[0]; if(!file) return;
+  uploadRagDoc(file);
+}
+function handleRagDrop(e) {
+  e.preventDefault();
+  document.getElementById('ragDropZone').classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if(file) uploadRagDoc(file);
+}
+
+async function uploadRagDoc(file) {
+  const status = document.getElementById('ragUploadStatus');
+  status.textContent = `Uploading ${file.name}...`;
+  status.style.color = 'rgba(255,255,255,0.6)';
+
+  const formData = new FormData();
+  formData.append('file', file, file.name);
+
+  try {
+    const res = await fetch(RAG_API+'/ingest', {method:'POST', body:formData});
+    const ct = res.headers.get('content-type')||'';
+
+    if(ct.includes('text/event-stream')) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      while(true) {
+        const {done,value} = await reader.read(); if(done) break;
+        const lines = decoder.decode(value).split('\n').filter(l=>l.startsWith('data: '));
+        for(const line of lines) {
+          const data = line.slice(6); if(data==='[DONE]') continue;
+          try {
+            const j = JSON.parse(data);
+            if(j.status==='progress') status.textContent = j.message.replace('[RAG] ','');
+            else if(j.status==='done') {
+              status.textContent = `✓ ${j.chunks} chunks indexed`;
+              status.style.color = '#4ADE80';
+              loadRagDocs();
+            } else if(j.status==='error') {
+              status.textContent = '✗ '+j.error;
+              status.style.color = '#EF4444';
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch(e) {
+    status.textContent = '✗ '+e.message;
+    status.style.color = '#EF4444';
+  }
+}
+
+async function loadRagDocs() {
+  const res = await fetch(RAG_API+'/list');
+  const data = await res.json();
+  const list = document.getElementById('ragDocList');
+  if(!data.documents || data.documents.length===0) {
+    list.innerHTML = '<div style="font-size:11px;color:rgba(255,255,255,0.3);font-style:italic;">No documents yet</div>';
+    return;
+  }
+  list.innerHTML = data.documents.map(d=>`
+    <div style="background:rgba(255,255,255,0.07);border-radius:7px;padding:8px 10px;display:flex;align-items:center;gap:6px;">
+      <span style="font-size:14px">${d.filename.endsWith('.pdf')?'📄':d.filename.endsWith('.xlsx')||d.filename.endsWith('.xls')?'📊':d.filename.endsWith('.docx')||d.filename.endsWith('.doc')?'📝':'📎'}</span>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:11px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${d.filename}</div>
+        <div style="font-size:10px;color:rgba(255,255,255,0.4)">${d.chunks} chunks</div>
+      </div>
+      <button onclick="deleteRagDoc('${d.filename}')" style="background:rgba(239,68,68,0.2);border:none;color:#EF4444;padding:2px 6px;border-radius:4px;cursor:pointer;font-size:10px;">✕</button>
+    </div>`).join('');
+}
+
+async function deleteRagDoc(filename) {
+  if(!confirm(`Delete ${filename} from index?`)) return;
+  await fetch(RAG_API+'/delete/'+encodeURIComponent(filename), {method:'DELETE'});
+  loadRagDocs();
+}
+
+function ragHandleKey(e) { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ragSend();} }
+function ragUseChip(el) { document.getElementById('ragChips').style.display='none'; document.getElementById('ragInput').value=el.textContent; ragSend(); }
+
+function ragAddMsg(html, isUser) {
+  const m=document.getElementById('ragMessages');
+  const row=document.createElement('div');
+  row.className='mrow '+(isUser?'user':'bot');
+  row.innerHTML=isUser
+    ? `<div class="bubble user">${esc(html)}</div><div class="meta">You</div>`
+    : `<div class="bubble bot">${html}</div><div class="meta">Doc Intelligence · RAG</div>`;
+  m.appendChild(row); m.scrollTop=m.scrollHeight;
+}
+
+async function ragSend() {
+  if(ragLoading) return;
+  const inp = document.getElementById('ragInput');
+  const q = inp.value.trim(); if(!q) return;
+  ragAddMsg(q, true);
+  inp.value=''; autoResize(inp);
+  ragLoading=true;
+  document.getElementById('ragSendBtn').disabled=true;
+
+  const m=document.getElementById('ragMessages');
+  const thinking=document.createElement('div');
+  thinking.id='rag-thinking'; thinking.className='mrow bot';
+  thinking.innerHTML='<div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
+  m.appendChild(thinking); m.scrollTop=m.scrollHeight;
+
+  try {
+    const res = await fetch(RAG_API+'/query', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})});
+    document.getElementById('rag-thinking')?.remove();
+    const data = await res.json();
+    if(data.error) {
+      ragAddMsg(`<span style="color:var(--red)">✗ ${esc(data.error)}</span>`, false);
+    } else {
+      const sourcesHtml = data.sources?.length
+        ? `<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-size:10.5px;color:var(--text3)">📎 Sources: ${data.sources.map(s=>`<strong>${esc(s)}</strong>`).join(', ')}</div>`
+        : '';
+      ragAddMsg(render(data.answer) + sourcesHtml, false);
+    }
+  } catch(e) {
+    document.getElementById('rag-thinking')?.remove();
+    ragAddMsg(`<span style="color:var(--red)">✗ Error: ${esc(e.message)}</span>`, false);
+  }
+  ragLoading=false;
+  document.getElementById('ragSendBtn').disabled=false;
+}
+
+// Load docs on tab switch
+document.addEventListener('click', e => {
+  if(e.target.closest('.tab-btn')?.textContent?.includes('Doc Intelligence')) loadRagDocs();
+});
+
+// ════════════════════════════════════════════════════════
+// REPORT GENERATOR
+// ════════════════════════════════════════════════════════
+function setReportTemplate(template, btn) {
+  currentReportTemplate = template;
+  document.querySelectorAll('.mode-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  // Update period placeholder
+  const period = document.getElementById('reportPeriod');
+  const placeholders = {
+    weekly_status: 'e.g. Week 28, 7-13 July 2026',
+    mpr: 'e.g. June 2026',
+    executive_summary: 'e.g. Q2 2026',
+    custom: 'e.g. July 2026'
+  };
+  period.placeholder = placeholders[template]||'';
+}
+
+let reportDownloadUrl = null;
+
+async function generateReport() {
+  const btn = document.getElementById('reportGenBtn');
+  const status = document.getElementById('reportStatus');
+  const preview = document.getElementById('reportPreview');
+  const dlBtn = document.getElementById('reportDownloadBtn');
+
+  const project = document.getElementById('reportProject').value.trim();
+  const period = document.getElementById('reportPeriod').value.trim();
+  const data_summary = document.getElementById('reportData').value.trim();
+  const custom_instructions = document.getElementById('reportInstructions').value.trim();
+
+  if(!project) { alert('Please enter a project name.'); return; }
+
+  btn.disabled=true; btn.innerHTML='<span>⏳</span> Generating…';
+  status.textContent='AI is writing your report… (~60-90 seconds)';
+  preview.innerHTML='<em style="color:var(--text3)">Generating report content…</em>';
+  dlBtn.style.display='none';
+
+  try {
+    const res = await fetch(REPORT_API, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({template:currentReportTemplate, project, period, data_summary, custom_instructions})
+    });
+
+    if(res.ok) {
+      const blob = await res.blob();
+      const sections = res.headers.get('X-Report-Sections')||'?';
+      reportDownloadUrl = URL.createObjectURL(blob);
+      const filename = res.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1]||'report.docx';
+
+      status.textContent = `✓ Report ready! ${sections} sections generated.`;
+      preview.innerHTML = `
+        <div style="text-align:center;padding:20px;">
+          <div style="font-size:40px;margin-bottom:12px">📄</div>
+          <div style="font-size:15px;font-weight:600;color:var(--navy);margin-bottom:6px">${filename}</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:16px">${sections} sections · Professional NHAI report format</div>
+          <button class="btn-primary" onclick="document.getElementById('reportDownloadBtn').click()" style="margin:0 auto">⬇ Download Word Document</button>
+        </div>`;
+
+      dlBtn.classList.add('show');
+      dlBtn.innerHTML='<span>⬇</span> Download .docx';
+      dlBtn.onclick = () => {
+        const a=document.createElement('a'); a.href=reportDownloadUrl; a.download=filename; a.click();
+      };
+    } else {
+      const err = await res.json();
+      status.textContent='✗ Generation failed';
+      preview.innerHTML=`<span style="color:var(--red)">Error: ${esc(err.error||'Unknown error')}</span>`;
+    }
+  } catch(e) {
+    status.textContent='✗ Error: '+e.message;
+    preview.innerHTML=`<span style="color:var(--red)">${esc(e.message)}</span>`;
+  }
+  btn.disabled=false; btn.innerHTML='<span>⚡</span> Generate Report';
+}
+
+// Set default period
+document.getElementById('reportPeriod').value = new Date().toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'});
+</script>
 
 </body>
 </html>
