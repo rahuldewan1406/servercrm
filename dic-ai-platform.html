@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>DIC AI Platform — Government AI Suite</title>
+<style>
+:root {
+  --navy:   #0D1B3E;
+  --navy2:  #162B5C;
+  --navy3:  #1E3A6E;
+  --gold:   #F7A800;
+  --green:  #22C55E;
+  --red:    #EF4444;
+  --bg:     #F5F7FC;
+  --white:  #FFFFFF;
+  --border: #DDE3F0;
+  --text:   #1A2340;
+  --text2:  #4A5878;
+  --text3:  #8A9BB8;
+  --accent: #2563EB;
+  --r:      12px;
+  --shadow: 0 2px 12px rgba(13,27,62,0.10);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);height:100dvh;display:flex;flex-direction:column;overflow:hidden;}
+
+/* ── Top bar ── */
+.topbar{background:var(--navy);height:54px;display:flex;align-items:center;gap:12px;padding:0 20px;flex-shrink:0;border-bottom:2px solid var(--gold);}
+.logo{width:34px;height:34px;background:var(--gold);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--navy);flex-shrink:0;}
+.app-title{font-size:15px;font-weight:700;color:#fff;}
+.app-sub{font-size:10px;color:rgba(255,255,255,0.4);margin-top:1px;}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:8px;}
+.status-pill{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:600;color:#4ADE80;background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.25);padding:3px 10px;border-radius:20px;}
+.pulse{width:5px;height:5px;border-radius:50%;background:#4ADE80;animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+/* ── Tab nav ── */
+.tab-nav{background:var(--navy2);display:flex;gap:2px;padding:8px 20px 0;flex-shrink:0;}
+.tab-btn{padding:8px 18px;border-radius:8px 8px 0 0;border:none;background:transparent;color:rgba(255,255,255,0.45);font-size:13px;font-weight:500;cursor:pointer;transition:all .14s;display:flex;align-items:center;gap:6px;}
+.tab-btn:hover{background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.7);}
+.tab-btn.active{background:var(--bg);color:var(--navy);font-weight:600;}
+
+/* ── Content panels ── */
+.panels{flex:1;overflow:hidden;display:flex;flex-direction:column;}
+.panel{display:none;flex:1;flex-direction:column;overflow:hidden;}
+.panel.active{display:flex;}
+
+/* ════════════════════════
+   PANEL 1: CHAT
+════════════════════════ */
+.model-bar{background:var(--navy2);padding:7px 20px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;flex-shrink:0;border-bottom:1px solid rgba(255,255,255,0.07);}
+.model-label{font-size:10px;color:rgba(255,255,255,0.3);font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-right:4px;}
+.mbtn{display:flex;align-items:center;gap:4px;padding:3px 9px;border-radius:7px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.45);font-size:11px;font-weight:500;cursor:pointer;transition:all .13s;white-space:nowrap;}
+.mbtn:hover{background:rgba(255,255,255,0.1);color:#fff;}
+.mbtn.active{background:rgba(247,168,0,0.15);border-color:rgba(247,168,0,0.35);color:#fff;}
+.mtag{font-size:8.5px;font-weight:700;padding:1px 4px;border-radius:3px;}
+.tag-f{background:rgba(96,165,250,0.2);color:#60A5FA;}
+.tag-q{background:rgba(74,222,128,0.2);color:#4ADE80;}
+.tag-c{background:rgba(192,132,252,0.2);color:#C084FC;}
+.mstatus{margin-left:auto;font-size:10px;color:rgba(255,255,255,0.2);font-style:italic;}
+
+.messages{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:12px;}
+.messages::-webkit-scrollbar{width:3px;}
+.messages::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+.sys-msg{align-self:center;font-size:11px;color:var(--text3);padding:3px 14px;border:1px dashed var(--border);border-radius:20px;}
+.mrow{display:flex;flex-direction:column;max-width:78%;}
+.mrow.user{align-self:flex-end;align-items:flex-end;}
+.mrow.bot{align-self:flex-start;align-items:flex-start;}
+.bubble{padding:10px 14px;font-size:13.5px;line-height:1.65;word-break:break-word;}
+.bubble.user{background:var(--navy3);color:#fff;border-radius:12px 12px 3px 12px;box-shadow:var(--shadow);}
+.bubble.bot{background:var(--white);color:var(--text);border-radius:12px 12px 12px 3px;border:1px solid var(--border);box-shadow:var(--shadow);}
+.bubble.err{background:#FEE2E2;color:#991B1B;border:1px solid #FECACA;border-radius:12px 12px 12px 3px;}
+.bubble.bot pre{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;overflow-x:auto;margin:7px 0;font-size:12px;font-family:'Cascadia Code','Fira Code',monospace;}
+.bubble.bot code{background:rgba(13,27,62,0.06);padding:1px 5px;border-radius:3px;font-size:12px;font-family:'Cascadia Code','Fira Code',monospace;}
+.bubble.bot p{margin-bottom:5px;}.bubble.bot p:last-child{margin-bottom:0;}
+.meta{font-size:10px;color:var(--text3);margin-top:3px;padding:0 3px;}
+.typing{display:flex;gap:4px;align-items:center;padding:10px 14px;background:var(--white);border:1px solid var(--border);border-radius:12px 12px 12px 3px;align-self:flex-start;box-shadow:var(--shadow);}
+.dot{width:5px;height:5px;border-radius:50%;background:var(--text3);animation:bounce 1.3s infinite;}
+.dot:nth-child(2){animation-delay:.2s}.dot:nth-child(3){animation-delay:.4s}
+@keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-5px);opacity:1}}
+.chips{padding:0 20px 8px;display:flex;gap:6px;flex-wrap:wrap;flex-shrink:0;}
+.chip{padding:4px 12px;border-radius:20px;font-size:11.5px;border:1px solid var(--border);color:var(--text2);cursor:pointer;background:var(--white);transition:all .13s;white-space:nowrap;}
+.chip:hover{background:#EAF0FA;border-color:var(--navy3);color:var(--navy);}
+.chat-input-area{padding:10px 20px 14px;background:var(--white);border-top:1px solid var(--border);flex-shrink:0;}
+.input-wrap{display:flex;align-items:flex-end;gap:9px;border:1.5px solid var(--border);border-radius:12px;padding:9px 13px;transition:border-color .15s;}
+.input-wrap:focus-within{border-color:var(--navy3);box-shadow:0 0 0 3px rgba(30,58,110,0.08);}
+textarea{flex:1;border:none;outline:none;resize:none;font-family:inherit;font-size:13.5px;color:var(--text);line-height:1.6;background:transparent;max-height:130px;min-height:20px;}
+textarea::placeholder{color:var(--text3);}
+.send-btn{width:33px;height:33px;border-radius:9px;border:none;background:var(--navy);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .13s;}
+.send-btn:hover{background:var(--navy2);}
+.send-btn:disabled{opacity:.4;cursor:not-allowed;}
+.input-footer{display:flex;justify-content:space-between;margin-top:5px;padding:0 2px;font-size:10px;color:var(--text3);}
+
+/* ════════════════════════
+   PANEL 2: PPTX
+════════════════════════ */
+.pptx-panel{padding:24px;overflow-y:auto;gap:20px;}
+.section-title{font-size:13px;font-weight:700;color:var(--navy);margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+.card{background:var(--white);border:1px solid var(--border);border-radius:var(--r);padding:20px;box-shadow:var(--shadow);}
+.mode-tabs{display:flex;gap:8px;margin-bottom:16px;}
+.mode-tab{flex:1;padding:8px;border-radius:8px;border:1.5px solid var(--border);background:var(--bg);font-size:12.5px;font-weight:500;color:var(--text2);cursor:pointer;text-align:center;transition:all .13s;}
+.mode-tab.active{border-color:var(--navy3);background:#EAF0FA;color:var(--navy);font-weight:600;}
+.form-row{margin-bottom:12px;}
+.form-row label{display:block;font-size:11.5px;font-weight:600;color:var(--text2);margin-bottom:5px;}
+.form-row input,.form-row textarea,.form-row select{width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;color:var(--text);background:var(--white);outline:none;transition:border-color .15s;}
+.form-row input:focus,.form-row textarea:focus,.form-row select:focus{border-color:var(--navy3);}
+.form-row textarea{resize:vertical;min-height:80px;}
+.btn-primary{padding:10px 20px;background:var(--navy);color:#fff;border:none;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;transition:all .13s;display:flex;align-items:center;gap:7px;}
+.btn-primary:hover{background:var(--navy2);}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;}
+.btn-secondary{padding:10px 20px;background:var(--bg);color:var(--text2);border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;transition:all .13s;}
+.btn-secondary:hover{border-color:var(--navy3);color:var(--navy);}
+.pptx-progress{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;font-size:12.5px;color:var(--text2);min-height:50px;white-space:pre-wrap;font-family:monospace;}
+.download-btn{display:none;padding:11px 22px;background:#16A34A;color:#fff;border:none;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;align-items:center;gap:8px;transition:all .13s;}
+.download-btn:hover{background:#15803D;}
+.download-btn.show{display:flex;}
+
+/* ════════════════════════
+   PANEL 3: MEETING
+════════════════════════ */
+.meeting-panel{padding:20px;overflow-y:auto;gap:16px;}
+.rec-controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+.rec-btn{padding:10px 18px;border-radius:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:7px;transition:all .13s;}
+.rec-btn.record{background:#EF4444;color:#fff;}
+.rec-btn.record:hover{background:#DC2626;}
+.rec-btn.stop{background:var(--text2);color:#fff;}
+.rec-btn.upload-btn{background:var(--navy);color:#fff;}
+.rec-btn.upload-btn:hover{background:var(--navy2);}
+.rec-timer{font-size:20px;font-weight:700;color:var(--red);font-family:monospace;letter-spacing:2px;}
+.rec-status{font-size:12px;color:var(--text3);font-style:italic;}
+.waveform{height:48px;background:var(--bg);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;gap:3px;overflow:hidden;}
+.wave-bar{width:3px;background:var(--accent);border-radius:2px;animation:wave 1s infinite;transform-origin:bottom;}
+@keyframes wave{0%,100%{height:4px}50%{height:32px}}
+.transcript-box{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;min-height:100px;max-height:180px;overflow-y:auto;font-size:13px;line-height:1.7;color:var(--text2);white-space:pre-wrap;}
+.notes-box{background:var(--white);border:1px solid var(--border);border-radius:8px;padding:14px;min-height:120px;font-size:13px;line-height:1.7;color:var(--text);}
+.notes-box h3{font-size:13px;font-weight:700;color:var(--navy);margin-bottom:8px;}
+.notes-box ul{padding-left:18px;margin-bottom:8px;}
+.notes-box li{margin-bottom:4px;}
+.email-row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;}
+.email-row input{flex:1;min-width:200px;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;transition:border-color .15s;}
+.email-row input:focus{border-color:var(--navy3);}
+.progress-bar-wrap{background:var(--bg);border-radius:8px;height:6px;overflow:hidden;margin:8px 0;}
+.progress-bar{height:100%;background:var(--accent);border-radius:8px;transition:width .3s;}
+.step-indicator{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--text3);}
+.step{width:24px;height:24px;border-radius:50%;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--text3);flex-shrink:0;}
+.step.done{background:var(--green);border-color:var(--green);color:#fff;}
+.step.active{border-color:var(--accent);color:var(--accent);}
+.step-line{flex:1;height:2px;background:var(--border);}
+.step-line.done{background:var(--green);}
+
+/* Upload zone */
+.upload-zone{border:2px dashed var(--border);border-radius:10px;padding:28px;text-align:center;cursor:pointer;transition:all .15s;background:var(--bg);}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--navy3);background:#EAF0FA;}
+.upload-zone p{font-size:13px;color:var(--text3);margin-top:6px;}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:600;}
+.badge-blue{background:#DBEAFE;color:#1D4ED8;}
+.badge-green{background:#DCFCE7;color:#166534;}
+.badge-yellow{background:#FEF9C3;color:#854D0E;}
+.badge-red{background:#FEE2E2;color:#991B1B;}
+
+@media(max-width:600px){
+  .model-bar{padding:6px 14px;}
+  .messages,.pptx-panel,.meeting-panel{padding:14px;}
+  .mrow{max-width:90%;}
+}
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div class="topbar">
+  <div class="logo">DIC</div>
+  <div>
+    <div class="app-title">DIC AI Platform</div>
+    <div class="app-sub">Digital India Corporation · NHAI Infrastructure</div>
+  </div>
+  <div class="topbar-right">
+    <div class="status-pill"><div class="pulse"></div>Offline · VPC</div>
+  </div>
+</div>
+
+<!-- Tab nav -->
+<div class="tab-nav">
+  <button class="tab-btn active" onclick="switchTab('chat',this)">💬 AI Chat</button>
+  <button class="tab-btn" onclick="switchTab('pptx',this)">📊 PPTX Generator</button>
+  <button class="tab-btn" onclick="switchTab('meeting',this)">🎙️ Meeting Notes</button>
+  <button class="tab-btn" onclick="switchTab('dashboard',this)">📊 Auto Dashboard</button>
+  <button class="tab-btn" onclick="switchTab('datachat',this)">🗄️ Data Chat</button>
+</div>
+
+<!-- ════════ PANEL 1: CHAT ════════ -->
+<div class="panel active" id="panel-chat">
+  <div class="model-bar">
+    <span class="model-label">Model</span>
+    <button class="mbtn active" data-model="llama3.2:1b" onclick="selectModel(this)">🦙 Llama 3.2 1B <span class="mtag tag-f">⚡6s</span></button>
+    <button class="mbtn" data-model="phi4-mini" onclick="selectModel(this)">🔬 Phi4 Mini <span class="mtag tag-f">⚡6s</span></button>
+    <button class="mbtn" data-model="qwen2.5:1.5b" onclick="selectModel(this)">⚡ Qwen2.5 1.5B <span class="mtag tag-f">12s</span></button>
+    <button class="mbtn" data-model="llama3.1:8b" onclick="selectModel(this)">🦙 Llama 3.1 8B <span class="mtag tag-q">quality</span></button>
+    <button class="mbtn" data-model="mistral:7b" onclick="selectModel(this)">🌊 Mistral 7B <span class="mtag tag-q">free</span></button>
+    <button class="mbtn" data-model="qwen3:8b" onclick="selectModel(this)">⚡ Qwen3 8B <span class="mtag tag-c">code</span></button>
+    <button class="mbtn" data-model="gemma:7b" onclick="selectModel(this)">💎 Gemma 7B <span class="mtag tag-q">free</span></button>
+    <span class="mstatus" id="mstatus">Ready</span>
+  </div>
+
+  <div class="messages" id="messages">
+    <div class="sys-msg">All models running locally on EC2 · No data leaves VPC</div>
+    <div class="mrow bot">
+      <div class="bubble bot">Hello! I'm your secure AI assistant. Ask me anything about NHAI projects, draft emails, write code, or generate reports — all running locally.</div>
+      <div class="meta">🦙 Llama 3.2 1B</div>
+    </div>
+  </div>
+
+  <div class="chips" id="chips">
+    <div class="chip" onclick="useChip(this)">NHAI project KPIs</div>
+    <div class="chip" onclick="useChip(this)">Draft a status email</div>
+    <div class="chip" onclick="useChip(this)">Write SQL query</div>
+    <div class="chip" onclick="useChip(this)">Summarize in Hindi</div>
+    <div class="chip" onclick="useChip(this)">Review this code</div>
+  </div>
+
+  <div class="chat-input-area">
+    <div class="input-wrap">
+      <textarea id="chatInput" rows="1" placeholder="Ask anything… (Enter to send, Shift+Enter for new line)"
+        oninput="autoResize(this)" onkeydown="handleKey(event)"></textarea>
+      <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>
+    <div class="input-footer">
+      <span id="modelFooter">Model: <strong>Llama 3.2 1B</strong> · EC2</span>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ PANEL 2: PPTX ════════ -->
+<div class="panel" id="panel-pptx">
+  <div class="pptx-panel" style="display:flex;flex-direction:column;">
+    <div class="card">
+      <div class="section-title">📊 Generate PowerPoint Presentation</div>
+      <div class="mode-tabs">
+        <div class="mode-tab active" onclick="setPptxMode('prompt',this)">✍️ From Prompt</div>
+        <div class="mode-tab" onclick="setPptxMode('doc',this)">📄 From Document</div>
+      </div>
+
+      <!-- Prompt mode -->
+      <div id="pptx-prompt-mode">
+        <div class="form-row">
+          <label>Presentation Topic / Title</label>
+          <input id="pptxTopic" placeholder="e.g. NHAI DL3 Quarterly Review Q2 2026" />
+        </div>
+        <div class="form-row">
+          <label>Key Points to Cover <span style="font-weight:400;color:var(--text3)">(one per line)</span></label>
+          <textarea id="pptxPoints" placeholder="Project completion status&#10;Budget utilization&#10;Key achievements&#10;Upcoming milestones&#10;Risk summary"></textarea>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <div class="form-row" style="flex:1;margin:0">
+            <label>Number of Slides</label>
+            <select id="pptxSlides">
+              <option value="5">5 slides</option>
+              <option value="8" selected>8 slides</option>
+              <option value="10">10 slides</option>
+              <option value="15">15 slides</option>
+            </select>
+          </div>
+          <div class="form-row" style="flex:1;margin:0">
+            <label>Theme</label>
+            <select id="pptxTheme">
+              <option value="government">Government Blue</option>
+              <option value="modern">Modern Dark</option>
+              <option value="clean">Clean White</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Doc mode -->
+      <div id="pptx-doc-mode" style="display:none">
+        <div class="upload-zone" id="pptxDropZone" onclick="document.getElementById('pptxFile').click()"
+          ondrop="handlePptxDrop(event)" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')">
+          <div style="font-size:28px">📄</div>
+          <div style="font-size:13px;font-weight:600;color:var(--navy);margin-top:8px">Drop document here or click to upload</div>
+          <p>Supports .txt, .md files · AI will extract key points and create slides</p>
+          <input type="file" id="pptxFile" accept=".txt,.md" style="display:none" onchange="handlePptxFile(this)"/>
+        </div>
+        <div id="pptxFileInfo" style="display:none;margin-top:10px;font-size:12.5px;color:var(--text2)"></div>
+        <div class="form-row" style="margin-top:12px">
+          <label>Additional Instructions <span style="font-weight:400;color:var(--text3)">(optional)</span></label>
+          <input id="pptxDocInstructions" placeholder="e.g. Focus on risks and recommendations, use executive summary style" />
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-top:16px;align-items:center;flex-wrap:wrap;">
+        <button class="btn-primary" id="pptxGenBtn" onclick="generatePptx()">
+          <span>⚡</span> Generate Presentation
+        </button>
+        <button class="download-btn" id="pptxDownloadBtn">
+          <span>⬇</span> Download PPTX
+        </button>
+        <span id="pptxStatus" style="font-size:12px;color:var(--text3);font-style:italic"></span>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:0">
+      <div class="section-title">📋 Generation Log</div>
+      <div class="pptx-progress" id="pptxLog">Ready to generate. Fill in the details above and click Generate.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ PANEL 3: MEETING ════════ -->
+<div class="panel" id="panel-meeting">
+  <div class="meeting-panel" style="display:flex;flex-direction:column;">
+
+    <!-- Step indicator -->
+    <div style="display:flex;align-items:center;gap:0;margin-bottom:4px;">
+      <div class="step active" id="step1">1</div>
+      <div class="step-line" id="line1"></div>
+      <div class="step" id="step2">2</div>
+      <div class="step-line" id="line2"></div>
+      <div class="step" id="step3">3</div>
+      <div class="step-line" id="line3"></div>
+      <div class="step" id="step4">4</div>
+      <span style="font-size:11px;color:var(--text3);margin-left:10px" id="stepLabel">Record or upload audio</span>
+    </div>
+
+    <!-- Step 1: Record / Upload -->
+    <div class="card" id="meetingStep1">
+      <div class="section-title">🎙️ Step 1 — Record or Upload Meeting Audio</div>
+      <div class="rec-controls">
+        <button class="rec-btn record" id="recBtn" onclick="toggleRecording()">⏺ Start Recording</button>
+        <div class="rec-timer" id="recTimer" style="display:none">00:00</div>
+        <span class="rec-status" id="recStatus">Click to start microphone recording</span>
+      </div>
+
+      <div class="waveform" id="waveform" style="margin:12px 0;display:none">
+        <div class="wave-bar" style="animation-delay:0s"></div>
+        <div class="wave-bar" style="animation-delay:.1s"></div>
+        <div class="wave-bar" style="animation-delay:.2s"></div>
+        <div class="wave-bar" style="animation-delay:.3s"></div>
+        <div class="wave-bar" style="animation-delay:.4s"></div>
+        <div class="wave-bar" style="animation-delay:.5s"></div>
+        <div class="wave-bar" style="animation-delay:.6s"></div>
+        <div class="wave-bar" style="animation-delay:.7s"></div>
+      </div>
+
+      <div style="margin:12px 0;display:flex;align-items:center;gap:10px;">
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+        <span style="font-size:11px;color:var(--text3)">OR</span>
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+      </div>
+
+      <div class="upload-zone" id="audioDropZone" onclick="document.getElementById('audioFile').click()"
+        ondrop="handleAudioDrop(event)" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')">
+        <div style="font-size:24px">🎵</div>
+        <div style="font-size:13px;font-weight:600;color:var(--navy);margin-top:6px">Upload audio/video file</div>
+        <p>Supports .mp3, .mp4, .wav, .m4a, .ogg · Max 500MB</p>
+        <input type="file" id="audioFile" accept=".mp3,.mp4,.wav,.m4a,.ogg,.webm" style="display:none" onchange="handleAudioFile(this)"/>
+      </div>
+      <div id="audioFileInfo" style="display:none;margin-top:8px;font-size:12.5px;color:var(--text2);padding:8px 12px;background:var(--bg);border-radius:7px;"></div>
+
+      <div style="margin-top:14px;">
+        <button class="btn-primary" id="transcribeBtn" onclick="transcribeAudio()" style="display:none">
+          <span>🔤</span> Transcribe Audio
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 2: Transcript -->
+    <div class="card" id="meetingStep2" style="display:none">
+      <div class="section-title">📝 Step 2 — Transcript</div>
+      <div class="transcript-box" id="transcriptBox">Transcription will appear here…</div>
+      <div style="margin-top:10px;display:flex;gap:8px;">
+        <button class="btn-primary" onclick="generateNotes()"><span>🤖</span> Generate Meeting Notes</button>
+        <button class="btn-secondary" onclick="editTranscript()">✏️ Edit Transcript</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Meeting notes -->
+    <div class="card" id="meetingStep3" style="display:none">
+      <div class="section-title">🗒️ Step 3 — Meeting Notes & Summary</div>
+      <div class="notes-box" id="notesBox">AI-generated notes will appear here…</div>
+      <div style="margin-top:10px;">
+        <button class="btn-primary" onclick="showEmailStep()"><span>📧</span> Send via Email</button>
+      </div>
+    </div>
+
+    <!-- Step 4: Email -->
+    <div class="card" id="meetingStep4" style="display:none">
+      <div class="section-title">📧 Step 4 — Send Meeting Notes</div>
+      <div class="form-row">
+        <label>Recipients <span style="font-weight:400;color:var(--text3)">(comma separated)</span></label>
+        <input id="meetingEmailTo" placeholder="mudit.dic@digitalindia.gov.in, pravesh.dic@digitalindia.gov.in" />
+      </div>
+      <div class="form-row">
+        <label>Subject</label>
+        <input id="meetingEmailSubject" value="Meeting Notes — DIC NHAI" />
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn-primary" onclick="sendMeetingEmail()"><span>📤</span> Send Email</button>
+        <button class="btn-secondary" onclick="downloadNotes()">⬇ Download Notes</button>
+      </div>
+      <div id="emailStatus" style="margin-top:10px;font-size:12.5px;min-height:18px;"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────────
+const CHAT_API    = '/codescan/dic-ai/chat';
+const PPTX_API    = '/codescan/dic-ai/pptx';
+  const PPTX_AI_API = '/codescan/dic-ai/pptx-ai';
+const TRANSC_API  = '/codescan/dic-ai/transcribe';
+const EMAIL_API   = '/api/send';
+const GUARD = [
+  /\b(password|passwd|api[_\s-]?key|secret\b|access[_\s-]?token)\b/i,
+  /\b(porn|xxx|nude|naked|adult\s+content)\b/i,
+  /\b(aadhaar\s+number|pan\s+card\s+number)\b/i,
+  /\b(make\s+a?\s*bomb|synthesize\s+drug|hack\s+into|write\s+malware)\b/i,
+];
+
+// ── Tab switching ────────────────────────────────────────────────────────────
+function switchTab(id, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('panel-'+id).classList.add('active');
+}
+
+// ════════════════════════════════════════════════════════
+// CHAT
+// ════════════════════════════════════════════════════════
+let chatModel = 'llama3.2:1b', chatLabel = 'Llama 3.2 1B';
+let chatHistory = [], chatLoading = false;
+
+function selectModel(btn) {
+  document.querySelectorAll('.mbtn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  chatModel = btn.dataset.model;
+  chatLabel = btn.textContent.replace(/fast|free|code|quality|[⚡🔬⬆]\d+s/gi,'').trim();
+  chatHistory = [];
+  document.getElementById('modelFooter').innerHTML = `Model: <strong>${chatLabel}</strong> · EC2`;
+  addSys('Switched to ' + chatLabel + ' · conversation reset');
+}
+
+function autoResize(el) { el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,130)+'px'; }
+function handleKey(e) { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();} }
+function useChip(el) { document.getElementById('chips').style.display='none'; document.getElementById('chatInput').value=el.textContent; sendMessage(); }
+
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function render(raw){
+  let s=esc(raw);
+  s=s.replace(/```(\w*)\n?([\s\S]*?)```/g,(_,l,c)=>`<pre><code>${esc(c.trim())}</code></pre>`);
+  s=s.replace(/`([^`\n]+)`/g,'<code>$1</code>');
+  s=s.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+  s=s.replace(/\*(.+?)\*/g,'<em>$1</em>');
+  s=s.replace(/^#{1,3}\s+(.+)$/gm,'<strong>$1</strong>');
+  s=s.split(/\n\n+/).map(p=>p.trim()?`<p>${p.replace(/\n/g,'<br>')}</p>`:'').join('');
+  return s||esc(raw);
+}
+function scrollBot(){const m=document.getElementById('messages');m.scrollTop=m.scrollHeight;}
+function addSys(t){const m=document.getElementById('messages');const d=document.createElement('div');d.className='sys-msg';d.textContent=t;m.appendChild(d);scrollBot();}
+function addUser(t){const m=document.getElementById('messages');const r=document.createElement('div');r.className='mrow user';r.innerHTML=`<div class="bubble user">${esc(t)}</div><div class="meta">You</div>`;m.appendChild(r);scrollBot();}
+function addBot(t,err){const m=document.getElementById('messages');const r=document.createElement('div');r.className='mrow bot';r.innerHTML=`<div class="bubble ${err?'err':'bot'}">${err?esc(t):render(t)}</div><div class="meta">${chatLabel}</div>`;m.appendChild(r);scrollBot();}
+function showTyping(){const m=document.getElementById('messages');const d=document.createElement('div');d.id='typing';d.className='mrow bot';d.innerHTML='<div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';m.appendChild(d);scrollBot();}
+function removeTyping(){document.getElementById('typing')?.remove();}
+
+async function sendMessage() {
+  if(chatLoading) return;
+  const inp = document.getElementById('chatInput');
+  const text = inp.value.trim(); if(!text) return;
+  if(GUARD.some(p=>p.test(text))){addUser(text);inp.value='';autoResize(inp);addBot('[BLOCKED] Content guardrails triggered.',true);return;}
+  addUser(text); inp.value=''; autoResize(inp);
+  chatHistory.push({role:'user',content:text});
+  chatLoading=true;
+  document.getElementById('sendBtn').disabled=true;
+  document.getElementById('mstatus').textContent='Thinking…';
+  showTyping();
+  try {
+    const res = await fetch(CHAT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:chatModel,messages:chatHistory})});
+    const ct = res.headers.get('content-type')||'';
+    if(ct.includes('text/event-stream')){
+      removeTyping();
+      const m=document.getElementById('messages');
+      const row=document.createElement('div');row.className='mrow bot';
+      row.innerHTML=`<div class="bubble bot" id="sbub"></div><div class="meta">${chatLabel}</div>`;
+      m.appendChild(row);
+      const bub=document.getElementById('sbub');bub.removeAttribute('id');
+      const reader=res.body.getReader();const decoder=new TextDecoder();let full='';
+      while(true){const{done,value}=await reader.read();if(done)break;
+        const lines=decoder.decode(value).split('\n').filter(l=>l.startsWith('data: '));
+        for(const line of lines){const data=line.slice(6);if(data==='[DONE]')continue;
+          try{const j=JSON.parse(data);if(j.token){full+=j.token;bub.innerHTML=render(full);scrollBot();}}catch{}}}
+      chatHistory.push({role:'assistant',content:full});
+    } else {
+      removeTyping();
+      const data=await res.json();
+      const reply=data.choices?.[0]?.message?.content||'';
+      chatHistory.push({role:'assistant',content:reply});
+      addBot(reply,reply.startsWith('[BLOCKED]'));
+    }
+  } catch(e){removeTyping();addBot('Cannot reach AI backend: '+e.message,true);}
+  chatLoading=false;
+  document.getElementById('sendBtn').disabled=false;
+  document.getElementById('mstatus').textContent='Ready';
+  inp.focus();
+}
+
+// ════════════════════════════════════════════════════════
+// PPTX
+// ════════════════════════════════════════════════════════
+let pptxMode = 'prompt', pptxFileContent = '', pptxDownloadUrl = '';
+
+function setPptxMode(mode, btn) {
+  pptxMode = mode;
+  document.querySelectorAll('.mode-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('pptx-prompt-mode').style.display = mode==='prompt'?'block':'none';
+  document.getElementById('pptx-doc-mode').style.display = mode==='doc'?'block':'none';
+}
+
+function handlePptxFile(input) {
+  const file = input.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    pptxFileContent = e.target.result;
+    document.getElementById('pptxFileInfo').style.display='block';
+    document.getElementById('pptxFileInfo').textContent = `✓ Loaded: ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
+    document.getElementById('pptxDropZone').style.borderColor='var(--green)';
+  };
+  reader.readAsText(file);
+}
+function handlePptxDrop(e){e.preventDefault();document.getElementById('pptxDropZone').classList.remove('drag');const f=e.dataTransfer.files[0];if(f){document.getElementById('pptxFile').files=e.dataTransfer.files;handlePptxFile({files:e.dataTransfer.files});}}
+
+function logPptx(msg){const el=document.getElementById('pptxLog');el.textContent+=msg+'\n';el.scrollTop=el.scrollHeight;}
+
+async function generatePptx() {
+  const btn = document.getElementById('pptxGenBtn');
+  const log = document.getElementById('pptxLog');
+  const status = document.getElementById('pptxStatus');
+  log.textContent = '';
+  document.getElementById('pptxDownloadBtn').classList.remove('show');
+
+  const topic = document.getElementById('pptxTopic')?.value.trim() || '';
+  const points = document.getElementById('pptxPoints')?.value.trim() || '';
+  const numSlides = parseInt(document.getElementById('pptxSlides')?.value || '8');
+  const theme = document.getElementById('pptxTheme')?.value || 'government';
+  const docContent = pptxMode === 'doc' ? pptxFileContent : null;
+
+  if(pptxMode==='prompt' && !topic){alert('Please enter a topic.');return;}
+  if(pptxMode==='doc' && !pptxFileContent){alert('Please upload a document first.');return;}
+
+  btn.disabled=true; btn.innerHTML='<span>⏳</span> Generating…';
+  status.textContent = 'AI is planning your slides…';
+  logPptx('► Sending to AI on EC2 (llama3.1:8b)…');
+  logPptx('► Topic: ' + (topic||'From document'));
+  logPptx('► Slides: ' + numSlides + ' | Theme: ' + theme);
+
+  try {
+    // Step 1: AI generates slide structure server-side (no ALB timeout issue)
+    const aiRes = await fetch(PPTX_AI_API, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ topic, points, numSlides, theme, docContent })
+    });
+
+    if(!aiRes.ok) {
+      const err = await aiRes.text();
+      logPptx('✗ AI error: ' + err.slice(0,200));
+      status.textContent = '✗ AI generation failed';
+      btn.disabled=false; btn.innerHTML='<span>⚡</span> Generate Presentation';
+      return;
+    }
+
+    const { slideData } = await aiRes.json();
+    logPptx('✓ AI generated ' + (slideData.slides?.length||0) + ' slides');
+    logPptx('► Building PPTX file…');
+    status.textContent = 'Building PPTX file…';
+
+    // Step 2: Build PPTX from slide data
+    const pptxRes = await fetch(PPTX_API, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(slideData)
+    });
+
+    if(pptxRes.ok) {
+      const blob = await pptxRes.blob();
+      pptxDownloadUrl = URL.createObjectURL(blob);
+      logPptx('✓ PPTX ready! Size: ' + (blob.size/1024).toFixed(1) + ' KB');
+      status.textContent = '✓ Ready to download!';
+      const dlBtn = document.getElementById('pptxDownloadBtn');
+      dlBtn.classList.add('show');
+      dlBtn.onclick = () => {
+        const a = document.createElement('a');
+        a.href = pptxDownloadUrl;
+        a.download = (slideData.title||topic||'presentation').replace(/[^a-z0-9]/gi,'_') + '.pptx';
+        a.click();
+        logPptx('► Downloaded: ' + a.download);
+      };
+    } else {
+      const err = await pptxRes.text();
+      logPptx('✗ PPTX build error: ' + err.slice(0,200));
+      status.textContent = '✗ Build failed';
+    }
+  } catch(e) {
+    logPptx('✗ Error: ' + e.message);
+    status.textContent = '✗ Error occurred';
+  }
+  btn.disabled=false; btn.innerHTML='<span>⚡</span> Generate Presentation';
+}
+
+async function transcribeAudio() {
+  if(!audioBlob){alert('No audio to transcribe.');return;}
+  const btn=document.getElementById('transcribeBtn');
+  btn.disabled=true; btn.innerHTML='<span>⏳</span> Transcribing…';
+  document.getElementById('meetingStep2').style.display='block';
+  document.getElementById('transcriptBox').textContent='Uploading audio and transcribing… This may take a few minutes.';
+  setStep(2);
+
+  const formData = new FormData();
+  formData.append('audio', audioBlob, 'meeting.webm');
+
+  try {
+    const res = await fetch(TRANSC_API, {method:'POST', body:formData});
+    const ct = res.headers.get('content-type')||'';
+
+    if(ct.includes('text/event-stream')) {
+      // SSE streaming transcription
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      document.getElementById('transcriptBox').textContent = 'Loading Whisper model...';
+
+      while(true) {
+        const {done,value} = await reader.read();
+        if(done) break;
+        const lines = decoder.decode(value).split('\n').filter(l=>l.startsWith('data: '));
+        for(const line of lines) {
+          const data = line.slice(6);
+          if(data==='[DONE]') break;
+          try {
+            const j = JSON.parse(data);
+            if(j.status==='progress') {
+              document.getElementById('transcriptBox').textContent = j.message;
+            } else if(j.status==='done') {
+              document.getElementById('transcriptBox').textContent = j.transcript||'(No speech detected)';
+            } else if(j.status==='error') {
+              document.getElementById('transcriptBox').textContent = 'Error: ' + j.error;
+            }
+          } catch {}
+        }
+      }
+    } else {
+      const data = await res.json();
+      document.getElementById('transcriptBox').textContent = data.transcript||'(No speech detected)';
+    }
+  } catch(e){
+    document.getElementById('transcriptBox').textContent='Error: '+e.message+'\n\nMake sure the Whisper model is installed on EC2.';
+  }
+  btn.disabled=false; btn.innerHTML='<span>🔤</span> Transcribe Audio';
+}
+
+function editTranscript(){
+  const box=document.getElementById('transcriptBox');
+  box.contentEditable='true'; box.focus();
+  box.style.border='1.5px solid var(--accent)';
+}
+
+async function generateNotes(){
+  const transcript=document.getElementById('transcriptBox').textContent.trim();
+  if(!transcript||transcript.length<20){alert('Transcript is too short.');return;}
+  document.getElementById('meetingStep3').style.display='block';
+  document.getElementById('notesBox').innerHTML='<em style="color:var(--text3)">Generating meeting notes…</em>';
+  setStep(3);
+
+  const prompt=`You are a professional meeting notes writer for Digital India Corporation (DIC) / NHAI.\n\nAnalyze this meeting transcript and create structured meeting notes:\n\n---\n${transcript.slice(0,6000)}\n---\n\nFormat the output as:\n\n## Meeting Summary\n[2-3 sentence summary]\n\n## Key Discussion Points\n- Point 1\n- Point 2\n\n## Action Items\n- [ ] Action 1 (Owner: Name)\n- [ ] Action 2 (Owner: Name)\n\n## Decisions Made\n- Decision 1\n\n## Next Steps\n- Step 1`;
+
+  try {
+    const res=await fetch(CHAT_API,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'llama3.2:1b',messages:[{role:'user',content:prompt}]})});
+    const ct=res.headers.get('content-type')||'';
+    let notes='';
+    if(ct.includes('text/event-stream')){
+      const reader=res.body.getReader();const decoder=new TextDecoder();
+      const box=document.getElementById('notesBox');box.innerHTML='';
+      while(true){const{done,value}=await reader.read();if(done)break;
+        const lines=decoder.decode(value).split('\n').filter(l=>l.startsWith('data: '));
+        for(const line of lines){const data=line.slice(6);if(data==='[DONE]')continue;
+          try{const j=JSON.parse(data);if(j.token){notes+=j.token;box.innerHTML=renderNotes(notes);}}catch{}}}
+    } else {
+      const data=await res.json();
+      notes=data.choices?.[0]?.message?.content||'';
+      document.getElementById('notesBox').innerHTML=renderNotes(notes);
+    }
+    // Pre-fill email
+    document.getElementById('meetingEmailSubject').value='Meeting Notes — '+new Date().toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
+  } catch(e){document.getElementById('notesBox').innerHTML='Error: '+e.message;}
+}
+
+function renderNotes(md){
+  let s=md.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  s=s.replace(/^## (.+)$/gm,'<h3>$1</h3>');
+  s=s.replace(/^### (.+)$/gm,'<strong>$1</strong>');
+  s=s.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+  s=s.replace(/^- \[ \] (.+)$/gm,'<li>☐ $1</li>');
+  s=s.replace(/^- \[x\] (.+)$/gm,'<li>☑ $1</li>');
+  s=s.replace(/^- (.+)$/gm,'<li>$1</li>');
+  s=s.replace(/(<li>.*<\/li>\n?)+/g,m=>'<ul>'+m+'</ul>');
+  return s;
+}
+
+function showEmailStep(){
+  document.getElementById('meetingStep4').style.display='block';
+  setStep(4);
+  document.getElementById('meetingStep4').scrollIntoView({behavior:'smooth'});
+}
+
+async function sendMeetingEmail(){
+  const to=document.getElementById('meetingEmailTo').value.trim();
+  const subject=document.getElementById('meetingEmailSubject').value.trim();
+  const notes=document.getElementById('notesBox').innerHTML;
+  const transcript=document.getElementById('transcriptBox').textContent.trim();
+  if(!to){alert('Please enter at least one recipient.');return;}
+
+  const status=document.getElementById('emailStatus');
+  status.textContent='Sending…'; status.style.color='var(--text3)';
+
+  const body=`<div style="font-family:sans-serif;max-width:700px;margin:0 auto">
+    <div style="background:#0D1B3E;padding:16px 24px;border-radius:8px 8px 0 0;border-bottom:3px solid #F7A800">
+      <h2 style="color:#fff;margin:0;font-size:17px">DIC — NHAI · Meeting Notes</h2>
+      <p style="color:rgba(255,255,255,0.5);margin:4px 0 0;font-size:11px">${new Date().toLocaleString('en-IN')}</p>
+    </div>
+    <div style="background:#F5F7FC;padding:20px 24px;border:1px solid #DDE3F0;border-radius:0 0 8px 8px">
+      ${notes}
+      <hr style="margin:20px 0;border:none;border-top:1px solid #DDE3F0"/>
+      <details><summary style="cursor:pointer;font-size:12px;color:#8A9BB8">View Full Transcript</summary>
+      <pre style="font-size:11px;line-height:1.6;color:#4A5878;white-space:pre-wrap;margin-top:10px">${transcript.slice(0,10000)}</pre>
+      </details>
+    </div>
+  </div>`;
+
+  try {
+    const res=await fetch(EMAIL_API,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({recipients:to.split(',').map(e=>e.trim()).filter(Boolean),subject,body})});
+    if(res.ok){status.textContent='✓ Email sent successfully!';status.style.color='var(--green)';}
+    else{const d=await res.json();status.textContent='✗ '+d.message;status.style.color='var(--red)';}
+  } catch(e){status.textContent='✗ Error: '+e.message;status.style.color='var(--red)';}
+}
+
+function downloadNotes(){
+  const notes=document.getElementById('notesBox').innerText;
+  const blob=new Blob([notes],{type:'text/plain'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='meeting-notes-'+new Date().toISOString().slice(0,10)+'.txt';
+  a.click();
+}
+
+// ════════════════════════════════════════════════════════
+// MEETING NOTES
+// ════════════════════════════════════════════════════════
+let mediaRecorder, audioChunks=[], audioBlob=null, recInterval=null, recSeconds=0;
+
+function setStep(n) {
+  [1,2,3,4].forEach(i=>{
+    const s=document.getElementById('step'+i);
+    const l=document.getElementById('line'+i);
+    if(s) s.className='step'+(i<n?' done':i===n?' active':'');
+    if(l) l.className='step-line'+(i<n?' done':'');
+  });
+  const labels={1:'Record or upload audio',2:'Review transcript',3:'Review meeting notes',4:'Send via email'};
+  const el=document.getElementById('stepLabel');
+  if(el) el.textContent=labels[n]||'';
+}
+
+async function toggleRecording() {
+  const btn = document.getElementById('recBtn');
+  if(mediaRecorder && mediaRecorder.state==='recording'){
+    mediaRecorder.stop();
+    btn.className='rec-btn record'; btn.innerHTML='⏺ Start Recording';
+    clearInterval(recInterval);
+    document.getElementById('recTimer').style.display='none';
+    document.getElementById('waveform').style.display='none';
+    document.getElementById('recStatus').textContent='Recording stopped. Click Transcribe to continue.';
+    document.getElementById('transcribeBtn').style.display='flex';
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    audioChunks=[];
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+    mediaRecorder.onstop = () => {
+      audioBlob = new Blob(audioChunks, {type:'audio/webm'});
+      const info=document.getElementById('audioFileInfo');
+      info.style.display='block';
+      info.textContent=`✓ Recording saved (${(audioBlob.size/1024).toFixed(0)} KB · ${formatTime(recSeconds)})`;
+    };
+    mediaRecorder.start();
+    recSeconds=0;
+    recInterval=setInterval(()=>{recSeconds++;document.getElementById('recTimer').textContent=formatTime(recSeconds);},1000);
+    btn.className='rec-btn stop'; btn.innerHTML='⏹ Stop Recording';
+    document.getElementById('recTimer').style.display='block';
+    document.getElementById('waveform').style.display='flex';
+    document.getElementById('recStatus').textContent='Recording in progress…';
+  } catch(e){document.getElementById('recStatus').textContent='Microphone access denied: '+e.message;}
+}
+
+function formatTime(s){return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
+
+function handleAudioFile(input){
+  const file=input.files[0]; if(!file) return;
+  audioBlob=file;
+  const info=document.getElementById('audioFileInfo');
+  info.style.display='block';
+  info.innerHTML=`✓ <strong>${file.name}</strong> (${(file.size/1024/1024).toFixed(1)} MB)`;
+  document.getElementById('transcribeBtn').style.display='flex';
+  document.getElementById('audioDropZone').style.borderColor='var(--green)';
+}
+function handleAudioDrop(e){
+  e.preventDefault();
+  document.getElementById('audioDropZone').classList.remove('drag');
+  const f=e.dataTransfer.files[0];
+  if(f){document.getElementById('audioFile').files=e.dataTransfer.files;handleAudioFile({files:e.dataTransfer.files});}
+}
+
+function editTranscript(){
+  const box=document.getElementById('transcriptBox');
+  box.contentEditable='true'; box.focus();
+  box.style.border='1.5px solid var(--accent)';
+}
+
+function renderNotes(md){
+  let s=md.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  s=s.replace(/^## (.+)$/gm,'<h3>$1</h3>');
+  s=s.replace(/^### (.+)$/gm,'<strong>$1</strong>');
+  s=s.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+  s=s.replace(/^- \[ \] (.+)$/gm,'<li>☐ $1</li>');
+  s=s.replace(/^- \[x\] (.+)$/gm,'<li>☑ $1</li>');
+  s=s.replace(/^- (.+)$/gm,'<li>$1</li>');
+  s=s.replace(/(<li>.*<\/li>\n?)+/g,m=>'<ul>'+m+'</ul>');
+  return s;
+}
+
+function showEmailStep(){
+  document.getElementById('meetingStep4').style.display='block';
+  setStep(4);
+  document.getElementById('meetingStep4').scrollIntoView({behavior:'smooth'});
+}
+
+async function generateNotes(){
+  const transcript=document.getElementById('transcriptBox').textContent.trim();
+  if(!transcript||transcript.length<20){alert('Transcript is too short or empty.');return;}
+  document.getElementById('meetingStep3').style.display='block';
+  document.getElementById('notesBox').innerHTML='<em style="color:var(--text3)">Generating meeting notes with AI…</em>';
+  setStep(3);
+  const prompt=`You are a professional meeting notes writer for Digital India Corporation (DIC) / NHAI.\n\nAnalyze this meeting transcript and create structured meeting notes:\n\n---\n${transcript.slice(0,6000)}\n---\n\nFormat the output as:\n\n## Meeting Summary\n[2-3 sentence summary]\n\n## Key Discussion Points\n- Point 1\n- Point 2\n\n## Action Items\n- [ ] Action 1 (Owner: Name)\n\n## Decisions Made\n- Decision 1\n\n## Next Steps\n- Step 1`;
+  try {
+    const res=await fetch(CHAT_API,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'llama3.1:8b',messages:[{role:'user',content:prompt}]})});
+    const ct=res.headers.get('content-type')||'';
+    let notes='';
+    const box=document.getElementById('notesBox');
+    box.innerHTML='';
+    if(ct.includes('text/event-stream')){
+      const reader=res.body.getReader();const decoder=new TextDecoder();
+      while(true){const{done,value}=await reader.read();if(done)break;
+        const lines=decoder.decode(value).split('\n').filter(l=>l.startsWith('data: '));
+        for(const line of lines){const data=line.slice(6);if(data==='[DONE]')continue;
+          try{const j=JSON.parse(data);if(j.token){notes+=j.token;box.innerHTML=renderNotes(notes);}}catch{}}}
+    } else {
+      const data=await res.json();
+      notes=data.choices?.[0]?.message?.content||'';
+      box.innerHTML=renderNotes(notes);
+    }
+    document.getElementById('meetingEmailSubject').value='Meeting Notes — '+new Date().toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
+  } catch(e){document.getElementById('notesBox').innerHTML='Error: '+e.message;}
+}
+
+async function sendMeetingEmail(){
+  const to=document.getElementById('meetingEmailTo').value.trim();
+  const subject=document.getElementById('meetingEmailSubject').value.trim();
+  const notes=document.getElementById('notesBox').innerHTML;
+  const transcript=document.getElementById('transcriptBox').textContent.trim();
+  if(!to){alert('Please enter at least one recipient.');return;}
+  const status=document.getElementById('emailStatus');
+  status.textContent='Sending…'; status.style.color='var(--text3)';
+  const body=`<div style="font-family:sans-serif;max-width:700px;margin:0 auto">
+    <div style="background:#0D1B3E;padding:16px 24px;border-radius:8px 8px 0 0;border-bottom:3px solid #F7A800">
+      <h2 style="color:#fff;margin:0;font-size:17px">DIC — NHAI · Meeting Notes</h2>
+      <p style="color:rgba(255,255,255,0.5);margin:4px 0 0;font-size:11px">${new Date().toLocaleString('en-IN')}</p>
+    </div>
+    <div style="background:#F5F7FC;padding:20px 24px;border:1px solid #DDE3F0;border-radius:0 0 8px 8px">
+      ${notes}
+      <hr style="margin:20px 0;border:none;border-top:1px solid #DDE3F0"/>
+      <details><summary style="cursor:pointer;font-size:12px;color:#8A9BB8">View Full Transcript</summary>
+      <pre style="font-size:11px;line-height:1.6;color:#4A5878;white-space:pre-wrap;margin-top:10px">${transcript.slice(0,10000)}</pre>
+      </details>
+    </div>
+  </div>`;
+  try {
+    const r=await fetch('https://nhaidevelopment.dic.org.in/api/email/send-email',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({to:to.split(',').map(e=>e.trim()).filter(Boolean),subject,html:body,body:'Meeting notes attached'})});
+    if(r.ok){status.textContent='✓ Email sent!';status.style.color='var(--green)';}
+    else{const d=await r.json();status.textContent='✗ '+d.message;status.style.color='var(--red)';}
+  } catch(e){status.textContent='✗ Error: '+e.message;status.style.color='var(--red)';}
+}
+
+function downloadNotes(){
+  const notes=document.getElementById('notesBox').innerText;
+  const blob=new Blob([notes],{type:'text/plain'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='meeting-notes-'+new Date().toISOString().slice(0,10)+'.txt';
+  a.click();
+}
+
+
+// ── Dashboard ────────────────────────────────────────────────────────────────
+const DASH_API = '/codescan/dic-ai/dashboard';
+const DC_API   = '/codescan/dic-ai/datachat';
+let dashFile = null;
+
+function handleDashFile(input) {
+  const file = input.files[0]; if(!file) return;
+  dashFile = file;
+  document.getElementById('dashFileInfo').style.display='block';
+  document.getElementById('dashFileInfo').innerHTML=`✓ <strong>${file.name}</strong> (${(file.size/1024).toFixed(1)} KB)`;
+  document.getElementById('dashDropZone').style.borderColor='var(--green)';
+  document.getElementById('dashGenBtn').style.display='flex';
+}
+function handleDashDrop(e){e.preventDefault();document.getElementById('dashDropZone').classList.remove('drag');const f=e.dataTransfer.files[0];if(f){document.getElementById('dashFile').files=e.dataTransfer.files;handleDashFile({files:e.dataTransfer.files});}}
+
+async function generateDashboard() {
+  if(!dashFile){alert('Please upload a file first.');return;}
+  const btn=document.getElementById('dashGenBtn');
+  const status=document.getElementById('dashStatus');
+  btn.disabled=true; btn.innerHTML='<span>⏳</span> Analysing…';
+  status.textContent='Uploading and generating charts…';
+
+  const formData = new FormData();
+  formData.append('file', dashFile, dashFile.name);
+
+  try {
+    const res = await fetch(DASH_API, {method:'POST', body:formData});
+    if(!res.ok){const e=await res.json();status.textContent='✗ '+e.error;btn.disabled=false;btn.innerHTML='<span>⚡</span> Generate Dashboard';return;}
+    const data = await res.json();
+    if(data.error){status.textContent='✗ '+data.error;btn.disabled=false;btn.innerHTML='<span>⚡</span> Generate Dashboard';return;}
+    status.textContent='✓ Dashboard ready!';
+    renderDashboard(data);
+  } catch(e){status.textContent='✗ '+e.message;}
+  btn.disabled=false; btn.innerHTML='<span>⚡</span> Generate Dashboard';
+}
+
+function renderDashboard(data) {
+  // Stat cards
+  const statsEl = document.getElementById('dashStatCards');
+  statsEl.style.display='grid';
+  const s = data.stats;
+  const nums = data.numeric_summary;
+  let cardsHtml = `
+    <div style="background:var(--navy);color:#fff;border-radius:10px;padding:14px;text-align:center">
+      <div style="font-size:22px;font-weight:700">${s.rows.toLocaleString()}</div>
+      <div style="font-size:11px;opacity:.7;margin-top:3px">Total Rows</div>
+    </div>
+    <div style="background:#1E6E3A;color:#fff;border-radius:10px;padding:14px;text-align:center">
+      <div style="font-size:22px;font-weight:700">${s.cols}</div>
+      <div style="font-size:11px;opacity:.7;margin-top:3px">Columns</div>
+    </div>
+    <div style="background:#7C3AED;color:#fff;border-radius:10px;padding:14px;text-align:center">
+      <div style="font-size:22px;font-weight:700">${s.numeric_cols.length}</div>
+      <div style="font-size:11px;opacity:.7;margin-top:3px">Numeric Cols</div>
+    </div>
+    <div style="background:#B45309;color:#fff;border-radius:10px;padding:14px;text-align:center">
+      <div style="font-size:22px;font-weight:700">${s.null_count}</div>
+      <div style="font-size:11px;opacity:.7;margin-top:3px">Null Values</div>
+    </div>`;
+
+  // Add numeric summaries
+  Object.entries(nums).slice(0,4).forEach(([col,stat])=>{
+    cardsHtml += `<div style="background:var(--white);border:1px solid var(--border);border-radius:10px;padding:14px">
+      <div style="font-size:10px;color:var(--text3);margin-bottom:4px;font-weight:600">${col.toUpperCase()}</div>
+      <div style="font-size:16px;font-weight:700;color:var(--navy)">${stat.mean.toLocaleString()}</div>
+      <div style="font-size:10px;color:var(--text3)">avg · max ${stat.max.toLocaleString()}</div>
+    </div>`;
+  });
+  statsEl.innerHTML = cardsHtml;
+
+  // Charts
+  const chartsEl = document.getElementById('dashCharts');
+  chartsEl.style.display='grid';
+  chartsEl.innerHTML = data.charts.map(c=>`
+    <div style="background:var(--white);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow)">
+      <div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:10px">${c.title}</div>
+      <img src="data:image/png;base64,${c.img}" style="width:100%;border-radius:6px" alt="${c.title}"/>
+    </div>`).join('');
+
+  // AI Insights
+  generateDashInsights(data);
+
+  // Preview table
+  if(data.preview && data.preview.length > 0) {
+    const previewEl = document.getElementById('dashPreview');
+    previewEl.style.display='block';
+    const cols = data.columns;
+    let tableHtml = '<thead><tr>'+cols.map(c=>`<th style="padding:6px 10px;background:var(--navy);color:#fff;text-align:left;white-space:nowrap;font-size:11px">${c}</th>`).join('')+'</tr></thead><tbody>';
+    data.preview.forEach((row,i)=>{
+      tableHtml += `<tr style="background:${i%2===0?'var(--bg)':'var(--white)'}">`;
+      cols.forEach(c=>{tableHtml+=`<td style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:11.5px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row[c]||''}</td>`;});
+      tableHtml += '</tr>';
+    });
+    tableHtml += '</tbody>';
+    document.getElementById('dashTable').innerHTML = tableHtml;
+  }
+}
+
+async function generateDashInsights(data) {
+  const el = document.getElementById('dashInsightCard');
+  const ins = document.getElementById('dashInsights');
+  el.style.display='block';
+  ins.innerHTML='<em style="color:var(--text3)">Generating AI insights…</em>';
+
+  const summary = `Dataset: ${data.stats.rows} rows, ${data.stats.cols} columns. ` +
+    `Numeric columns: ${data.stats.numeric_cols.join(', ')}. ` +
+    `Categories: ${data.stats.categorical_cols?.join(', ')||'none'}. ` +
+    `Null values: ${data.stats.null_count}. ` +
+    `Stats: ${JSON.stringify(Object.fromEntries(Object.entries(data.numeric_summary).slice(0,3)))}`;
+
+  try {
+    const res = await fetch(CHAT_API, {method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'llama3.2:1b',messages:[{role:'user',content:`You are an NHAI data analyst. Analyze this dataset and provide 3-4 key insights in bullet points:
+${summary}`}]})});
+    const ct = res.headers.get('content-type')||'';
+    let text='';
+    if(ct.includes('text/event-stream')){
+      const reader=res.body.getReader();const decoder=new TextDecoder();
+      while(true){const{done,value}=await reader.read();if(done)break;
+        const lines=decoder.decode(value).split('\n').filter(l=>l.startsWith('data: '));
+        for(const line of lines){const d=line.slice(6);if(d==='[DONE]')continue;
+          try{const j=JSON.parse(d);if(j.token){text+=j.token;ins.innerHTML=render(text);}}catch{}}}
+    } else {
+      const d=await res.json();text=d.choices?.[0]?.message?.content||'';ins.innerHTML=render(text);
+    }
+  } catch(e){ins.textContent='Could not generate insights: '+e.message;}
+}
+
+// ── Data Chat ────────────────────────────────────────────────────────────────
+let dcLoading = false;
+function dcHandleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();dcSend();}}
+function dcUseChip(el){document.getElementById('dcChips').style.display='none';document.getElementById('dcInput').value=el.textContent;dcSend();}
+
+function dcAddMsg(html, isUser) {
+  const m=document.getElementById('dcMessages');
+  const row=document.createElement('div');
+  row.className='mrow '+(isUser?'user':'bot');
+  row.innerHTML=isUser
+    ? `<div class="bubble user">${esc(html)}</div><div class="meta">You</div>`
+    : `<div class="bubble bot">${html}</div><div class="meta">DL3 Data Chat</div>`;
+  m.appendChild(row);
+  m.scrollTop=m.scrollHeight;
+}
+
+function renderTable(columns, rows) {
+  if(!rows||rows.length===0) return '<em>No results</em>';
+  let html='<div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:11.5px">';
+  html+='<thead><tr>'+columns.map(c=>`<th style="padding:5px 8px;background:var(--navy);color:#fff;text-align:left;white-space:nowrap">${c}</th>`).join('')+'</tr></thead><tbody>';
+  rows.slice(0,20).forEach((row,i)=>{
+    html+=`<tr style="background:${i%2===0?'var(--bg)':'var(--white)'}">`;
+    columns.forEach(c=>{html+=`<td style="padding:4px 8px;border-bottom:1px solid var(--border);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row[c]??''}</td>`;});
+    html+='</tr>';
+  });
+  html+='</tbody></table></div>';
+  if(rows.length>20) html+=`<div style="font-size:11px;color:var(--text3);margin-top:4px">Showing 20 of ${rows.length} rows</div>`;
+  return html;
+}
+
+async function dcSend() {
+  if(dcLoading) return;
+  const inp=document.getElementById('dcInput');
+  const q=inp.value.trim(); if(!q) return;
+  dcAddMsg(q, true);
+  inp.value=''; autoResize(inp);
+  dcLoading=true;
+  document.getElementById('dcSendBtn').disabled=true;
+
+  // Show thinking
+  const m=document.getElementById('dcMessages');
+  const thinking=document.createElement('div');
+  thinking.id='dc-thinking'; thinking.className='mrow bot';
+  thinking.innerHTML='<div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
+  m.appendChild(thinking); m.scrollTop=m.scrollHeight;
+
+  try {
+    const res=await fetch(DC_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})});
+    document.getElementById('dc-thinking')?.remove();
+    const data=await res.json();
+    if(data.error){
+      dcAddMsg(`<span style="color:var(--red)">✗ ${esc(data.error)}</span>${data.sql?`<br><code style="font-size:10px;opacity:.7">${esc(data.sql)}</code>`:''}`, false);
+    } else {
+      const sqlHtml=`<code style="display:block;font-size:10.5px;background:var(--bg);padding:6px 8px;border-radius:5px;margin-bottom:8px;color:#1D4ED8;white-space:pre-wrap">${esc(data.sql)}</code>`;
+      const summaryHtml=`<div style="margin-bottom:8px;font-size:13px">${esc(data.summary)}</div>`;
+      const tableHtml=renderTable(data.columns, data.rows);
+      const countHtml=`<div style="font-size:10px;color:var(--text3);margin-top:6px">${data.count} row${data.count!==1?'s':''} returned</div>`;
+      dcAddMsg(sqlHtml+summaryHtml+tableHtml+countHtml, false);
+    }
+  } catch(e){
+    document.getElementById('dc-thinking')?.remove();
+    dcAddMsg(`<span style="color:var(--red)">✗ Error: ${esc(e.message)}</span>`, false);
+  }
+  dcLoading=false;
+  document.getElementById('dcSendBtn').disabled=false;
+}
+
+</script>
+
+<!-- PANEL: AUTO DASHBOARD -->
+<div class="panel" id="panel-dashboard">
+  <div class="pptx-panel" style="display:flex;flex-direction:column;gap:16px;">
+    <div class="card">
+      <div class="section-title">📊 Auto Dashboard from CSV / Excel</div>
+      <div class="upload-zone" id="dashDropZone" onclick="document.getElementById('dashFile').click()"
+        ondrop="handleDashDrop(event)" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')">
+        <div style="font-size:28px">📂</div>
+        <div style="font-size:13px;font-weight:600;color:var(--navy);margin-top:8px">Drop CSV or Excel file here</div>
+        <p>Supports .csv, .xlsx, .xls · AI generates charts and insights automatically</p>
+        <input type="file" id="dashFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleDashFile(this)"/>
+      </div>
+      <div id="dashFileInfo" style="display:none;margin-top:8px;font-size:12.5px;color:var(--text2);padding:8px 12px;background:var(--bg);border-radius:7px;"></div>
+      <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <button class="btn-primary" id="dashGenBtn" onclick="generateDashboard()" style="display:none"><span>⚡</span> Generate Dashboard</button>
+        <span id="dashStatus" style="font-size:12px;color:var(--text3);font-style:italic"></span>
+      </div>
+    </div>
+    <div id="dashInsightCard" style="display:none" class="card">
+      <div class="section-title">🤖 AI Insights</div>
+      <div id="dashInsights" style="font-size:13.5px;line-height:1.7;color:var(--text2)"></div>
+    </div>
+    <div id="dashStatCards" style="display:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;"></div>
+    <div id="dashCharts" style="display:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:16px;"></div>
+    <div class="card" id="dashPreview" style="display:none">
+      <div class="section-title">🔍 Data Preview <span style="font-size:11px;color:var(--text3);font-weight:400">(first 10 rows)</span></div>
+      <div style="overflow-x:auto"><table id="dashTable" style="width:100%;border-collapse:collapse;font-size:12px"></table></div>
+    </div>
+  </div>
+</div>
+
+<!-- PANEL: DATA CHAT -->
+<div class="panel" id="panel-datachat">
+  <div style="display:flex;flex-direction:column;height:100%;overflow:hidden;">
+    <div style="background:var(--navy2);padding:7px 20px;display:flex;align-items:center;gap:10px;flex-shrink:0;">
+      <span style="font-size:10px;color:rgba(255,255,255,0.4);font-weight:600;text-transform:uppercase;">Database</span>
+      <select id="dbSelect" style="padding:4px 10px;border-radius:7px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:12px;outline:none;">
+        <option value="crm">CRM DB — contacts, leads, tickets, projects</option>
+      </select>
+      <div style="margin-left:auto;font-size:10px;color:var(--green)">🔒 Read-only · SELECT only</div>
+    </div>
+    <div class="messages" id="dcMessages">
+      <div class="sys-msg">Ask questions about your data in plain English — AI writes safe SQL and shows results</div>
+      <div class="mrow bot">
+        <div class="bubble bot">Hello! I can query your NHAI CRM database. Try:<br><br>
+          • <em>"How many contacts do we have?"</em><br>
+          • <em>"Show all open tickets"</em><br>
+          • <em>"List projects by status"</em><br>
+          • <em>"Count leads by status"</em>
+        </div>
+        <div class="meta">DL3 Data Chat · llama3.1:8b</div>
+      </div>
+    </div>
+    <div class="chips" id="dcChips">
+      <div class="chip" onclick="dcUseChip(this)">How many contacts?</div>
+      <div class="chip" onclick="dcUseChip(this)">Show open tickets</div>
+      <div class="chip" onclick="dcUseChip(this)">List all projects</div>
+      <div class="chip" onclick="dcUseChip(this)">Count leads by status</div>
+      <div class="chip" onclick="dcUseChip(this)">Show recent users</div>
+    </div>
+    <div class="chat-input-area">
+      <div class="input-wrap">
+        <textarea id="dcInput" rows="1" placeholder="Ask anything about your data… (Enter to send)"
+          oninput="autoResize(this)" onkeydown="dcHandleKey(event)"></textarea>
+        <button class="send-btn" id="dcSendBtn" onclick="dcSend()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+      <div class="input-footer"><span style="color:var(--green);font-size:10px">🔒 Read-only · No DELETE/UPDATE allowed</span></div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
